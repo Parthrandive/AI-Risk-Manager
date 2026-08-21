@@ -100,18 +100,18 @@ def test_train_xgboost_and_lightgbm(synthetic_feature_splits):
     # XGBoost
     xgb_clf, xgb_metrics = train_xgboost_classifier(
         X_train, y_train, X_test, y_test,
-        n_estimators=30, max_depth=3, learning_rate=0.1
+        n_estimators=30, max_depth=3, learning_rate=0.1, scale_pos_weight=2.0
     )
     assert hasattr(xgb_clf, "predict")
-    assert xgb_metrics["scale_pos_weight_used"] > 1.0
+    assert xgb_metrics["scale_pos_weight_used"] == 2.0
 
     # LightGBM
     lgb_clf, lgb_metrics = train_lightgbm_classifier(
         X_train, y_train, X_test, y_test,
-        n_estimators=30, max_depth=3, learning_rate=0.1
+        n_estimators=30, max_depth=3, learning_rate=0.1, scale_pos_weight=2.0
     )
     assert hasattr(lgb_clf, "predict")
-    assert lgb_metrics["scale_pos_weight_used"] > 1.0
+    assert lgb_metrics["scale_pos_weight_used"] == 2.0
 
     # Feature Importances
     xgb_imp = extract_gain_feature_importances(xgb_clf, feature_cols)

@@ -149,18 +149,15 @@ def train_xgboost_classifier(
     n_estimators: int = 150,
     max_depth: int = 6,
     learning_rate: float = 0.05,
-    scale_pos_weight: Optional[float] = None,
+    scale_pos_weight: float = 1.0,
     random_state: int = 42
 ) -> Tuple[xgb.XGBClassifier, Dict[str, Any]]:
     """
-    Trains an XGBoost gradient-boosted decision tree classifier with scale_pos_weight.
+    Trains an XGBoost gradient-boosted decision tree classifier.
+    scale_pos_weight=1.0 preserves natural probability calibration and optimal PR-AUC ranking.
     """
     logger.info("--- Training Step 2: XGBoost Gradient-Boosted Classifier ---")
-
-    pos_count = int(y_train.sum())
-    neg_count = int(len(y_train) - pos_count)
-    if scale_pos_weight is None:
-        scale_pos_weight = float(neg_count / pos_count) if pos_count > 0 else 1.0
+    logger.info(f"Training XGBoost with scale_pos_weight={scale_pos_weight:.2f}...")
 
     clf = xgb.XGBClassifier(
         n_estimators=n_estimators,
@@ -192,18 +189,14 @@ def train_lightgbm_classifier(
     n_estimators: int = 150,
     max_depth: int = 6,
     learning_rate: float = 0.05,
-    scale_pos_weight: Optional[float] = None,
+    scale_pos_weight: float = 1.0,
     random_state: int = 42
 ) -> Tuple[lgb.LGBMClassifier, Dict[str, Any]]:
     """
-    Trains a LightGBM gradient-boosted classifier with scale_pos_weight / is_unbalance.
+    Trains a LightGBM gradient-boosted classifier.
     """
     logger.info("--- Training Step 3: LightGBM Gradient-Boosted Classifier ---")
-
-    pos_count = int(y_train.sum())
-    neg_count = int(len(y_train) - pos_count)
-    if scale_pos_weight is None:
-        scale_pos_weight = float(neg_count / pos_count) if pos_count > 0 else 1.0
+    logger.info(f"Training LightGBM with scale_pos_weight={scale_pos_weight:.2f}...")
 
     clf = lgb.LGBMClassifier(
         n_estimators=n_estimators,
@@ -301,14 +294,15 @@ def run_layer3_pipeline(
     output_dir: str = "data/processed",
     n_estimators: int = 150,
     max_depth: int = 6,
-    learning_rate: float = 0.05
+    learning_rate: float = 0.05,
+    scale_pos_weight: float = 1.0
 ) -> Dict[str, Any]:
     """
     Orchestrates Layer 3:
     1. Loads Layer 2 feature matrices.
     2. Trains Baseline (Logistic Regression).
-    3. Trains XGBoost (with scale_pos_weight).
-    4. Trains LightGBM (with scale_pos_weight).
+    3. Trains XGBoost.
+    4. Trains LightGBM.
     5. Evaluates and compares all three models.
     6. Extracts gain feature importances.
     7. Persists models and metrics JSON.
@@ -333,13 +327,19 @@ def run_layer3_pipeline(
     # 3. Train XGBoost
     xgb_model, xgb_metrics = train_xgboost_classifier(
         X_train, y_train, X_test, y_test,
-        n_estimators=n_estimators, max_depth=max_depth, learning_rate=learning_rate
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        learning_rate=learning_rate,
+        scale_pos_weight=scale_pos_weight
     )
 
     # 4. Train LightGBM
     lgb_model, lgb_metrics = train_lightgbm_classifier(
         X_train, y_train, X_test, y_test,
-        n_estimators=n_estimators, max_depth=max_depth, learning_rate=learning_rate
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        learning_rate=learning_rate,
+        scale_pos_weight=scale_pos_weight
     )
 
     # 5. Compare models

@@ -53,6 +53,12 @@ def main():
         default=0.05,
         help="Learning rate for GBDT"
     )
+    parser.add_argument(
+        "--scale-pos-weight",
+        type=float,
+        default=1.0,
+        help="Positive class weight (1.0 for unweighted ranking optimization)"
+    )
 
     args = parser.parse_args()
 
@@ -69,7 +75,8 @@ def main():
             output_dir=args.output_dir,
             n_estimators=args.n_estimators,
             max_depth=args.max_depth,
-            learning_rate=args.learning_rate
+            learning_rate=args.learning_rate,
+            scale_pos_weight=args.scale_pos_weight
         )
 
         base_m = results["baseline_metrics"]
