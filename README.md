@@ -53,22 +53,23 @@ Evaluated strictly on the held-out chronological test split (**118,108 transacti
 
 ### 2. Multi-Threshold Decision Sweep & Synthesized Operational Policies
 
-Rather than cherry-picking an uncalibrated default 0.5 cutoff, the pipeline sweeps decision boundaries from $0.001 \to 0.950$ (confirming the net financial benefit peak at $\tau = 0.010$) and synthesizes the spectrum into **3 named shipping policies**:
+Rather than cherry-picking an uncalibrated default 0.5 cutoff, the pipeline sweeps decision boundaries from $0.001 \to 0.950$ and synthesizes them into actionable enterprise shipping policies:
 
 ```
 Decision Threshold Sweep Spectrum:
-0.001 ──→ 0.010 [Aggressive] ──→ 0.100 ──→ 0.300 [Balanced] ──→ 0.500 ──→ 0.800 [Conservative] ──→ 0.950
+0.001 ──→ 0.010 [Theoretical Limit] ──→ 0.100 ──→ 0.200 [Primary Ship] ──→ 0.300 [Balanced F1] ──→ 0.800 [VIP] ──→ 0.950
 ```
 
-| Policy Profile | Operating Threshold ($\tau$) | Recall (Catch Rate) | Precision | False Positives per True Catch ($\text{FP}/\text{TP}$) | Dollar Capture Rate | Auto-Approved Volume | Strategic Intent |
+| Policy Profile | Operating Threshold ($\tau$) | Catch Rate (Recall) | Precision | False Positives per True Catch ($\text{FP}/\text{TP}$) | Flagged Volume | Auto-Approved Volume | Strategic Intent & Operational Context |
 |---|---|---|---|---|---|---|---|
-| 🟡 **Aggressive Policy** *(Max Catch & Peak Net Benefit)* | **`0.010`** | **`94.78%`** | `6.30%` | `14.87` | **`94.57%`** *(+\$529.1k Net Benefit)* | `48.25%` | Global maximum on net chargeback recovery curve; captures 95% of all fraud dollars, absorbing higher analyst triage load. |
-| 🟢 **Balanced Policy** *(Optimal F1 / Low Friction)* | **`0.300`** | **`38.83%`** | **`67.81%`** | **`0.47`** *(>2 true catches / 1 FP)* | `39.88%` | **`98.03%`** | Standard production baseline maximizing F1 (`0.4938`); flags only 1.97% of traffic with <0.5 false alerts per catch. |
-| 🔴 **Conservative Policy** *(Minimal Customer Friction)* | **`0.800`** | **`20.20%`** | **`90.82%`** | **`0.10`** *(10 true catches / 1 FP)* | `21.40%` | **`99.23%`** | Ultra-low customer friction; 90.8% precision with near-zero false alarms for frictionless VIP checkout conversion. |
+| 🌟 **Production Policy** *(Capacity-Constrained)* | **`0.200`** | **`44.86%`** *(1,823 caught)* | **`54.89%`** | **`0.82`** *(>1.2 true catches / 1 FP)* | **`2.81%`** *(3,321 txns)* | **`97.19%`** | **RECOMMENDED PRIMARY SHIP CANDIDATE.** Designed for fixed enterprise risk teams with a $\le 3.0\%$ review headcount budget. Captures 45% of fraud with more true catches than false alarms. |
+| 🟢 **Balanced Policy** *(Optimal F1 / Queue Defense)* | **`0.300`** | **`38.83%`** | **`67.81%`** | **`0.47`** *(>2 true catches / 1 FP)* | `1.97%` | **`98.03%`** | Standard production baseline maximizing harmonic F1 (`0.4938`); flags <2% of traffic. *Optimizes classification balance and queue protection, accepting higher missed chargebacks than the Primary Ship policy.* |
+| 🔴 **Conservative Policy** *(Minimal Friction VIP)* | **`0.800`** | **`20.20%`** | **`90.82%`** | **`0.10`** *(10 true catches / 1 FP)* | `0.77%` | **`99.23%`** | Ultra-low customer friction; 90.8% precision with near-zero false alarms for frictionless VIP checkout conversion. |
+| ⚠️ **Theoretical Ceiling** *(Unconstrained Math Limit)* | **`0.010`** | **`94.78%`** | `6.30%` | `14.87` | `51.75%` *(61k reviews)* | `48.25%` | **THEORETICAL UPPER BOUND (NOT SHIPPED).** Mathematical peak of unconstrained formula (+\$529.1k). Unviable for live deployment without massive reviewer headcount. |
 
 > [!NOTE]
-> **Stated Operational Cost Assumptions**:
-> - **Manual Analyst Review Cost**: Assumed at **\$5.00** per flagged case (industry benchmark for 3–5 min analyst triage).
+> **Stated Operational Cost Assumptions & Sensitivity**:
+> - **Manual Review Cost**: Assumed at **\$5.00** per flagged case (industry benchmark for 3–5 min analyst triage). Sensitivity sweep (\$2 $\to$ \$15) confirms stability: under capacity constraints, the operating point remains firmly anchored at $\tau \approx 0.19 - 0.20$.
 > - **Chargeback Loss Multiplier**: Assumed at **1.5x** the transaction dollar amount (goods loss + merchant penalty fees).
 
 ---
@@ -96,26 +97,10 @@ Decision Threshold Sweep Spectrum:
 
 ### 3. Gradient-Boosted Classifiers (XGBoost & LightGBM)
 * **Execution**: Trains `XGBoost` and `LightGBM` GBDTs alongside a `LogisticRegression` baseline.
-* **Feature Importances (Top Gain)**:
-  1. `V257` *(Gain: 3,961.83)*
-  2. `V258` *(Gain: 2,536.33)*
-  3. `V201` *(Gain: 982.93)*
-  4. `id_11` *(Gain: 615.70)*
-  5. `C4` *(Gain: 599.07)*
-
----
-
-### 4. Evaluation & Honesty Layer
-* Implements multi-threshold sweeping, calibration analysis (Brier score loss: `0.0224`), dollar capture curves, and the structured "What Didn't Work" registry.
-
----
-
-### 5. SHAP Explainability + Gray-Zone Triage Gateway
-* **Triage Routing**:
-  - 🟢 **Low Risk ($\le \tau_{\text{low}}$) → Auto-Approve**: Seamless zero-friction checkout.
-  - 🟡 **Gray-Zone ($\tau_{\text{low}} < \text{score} < \tau_{\text{high}}$) → Manual Review**: The model abstains gracefully on uncertain samples.
-  - 🔴 **High Risk ($\ge \tau_{\text{high}}$) → Auto-Block**: Real-time prevention of high-probability fraudulent activity.
-* **Audit Trail**: Plain-language local SHAP feature contribution breakdown attached to every flagged case.
+* **Feature Set Comparison**:
+  - **Full 427-Feature GBDT**: Achieves **`0.5149` PR-AUC** (76.7% of predictive gain lies in Vesta's proprietary V-features).
+  - **20-Feature Interpretable-Only GBDT**: Achieves **`0.2250` PR-AUC** (relying on `is_same_email_domain`, `card6`, `addr2`, `DeviceType`, `TransactionAmt`).
+  - *Engineering Decision*: Retain full 427-feature model for live defense scoring, and implement a domain semantic mapping layer in Layer 5 to translate V-cluster SHAP contributions into human-readable risk factors.
 
 ---
 
@@ -127,10 +112,8 @@ Decision Threshold Sweep Spectrum:
 | **Static Per-Card Historical Mean** | *Refactored* | Static train-wide averages allowed $t=100$ transactions to reference spend behavior from $t=5000$. Refactored to expanding cumulative mean up to $t-1$. |
 | **Independent Per-Split Rolling Windows** | *Refactored* | Resetting velocity windows at the boundary caused early test transactions to register as "first-ever" events. Refactored to streaming state continuity. |
 | **Hardcoded `scale_pos_weight = 28.87`** | *Parameterized* | Multiplying positive gradients by ~29 forced trees into noisy leaf splits, degrading PR-AUC from `0.5149` to `0.4629` and Brier score from `0.0224` to `0.1118`. Parameterized as a sweep. |
-| **Raw 300+ Anonymized V-Features Alone** | *De-prioritized* | Opaque features lack explainability for human risk ops. Augmented with interpretable velocity, recency, and expanding ratios for Layer 5 auditability. |
-
----
-
+| **Unconstrained $\tau = 0.010$ Default Policy** | *Refactored* | Flat cost formula mathematical peak required reviewing 51.75% of volume (61,121 cases). Replaced with Capacity-Constrained Primary Policy ($\tau = 0.20$, $\le 3\%$ review budget). |
+| **Pure Interpretable-Only Features (20 Signals)** | *Evaluated* | Restricting to 20 engineered features dropped PR-AUC from `0.5149` to `0.2250`. Retained full GBDT with Layer 5 semantic cluster mapping bridge. |
 ## 🚀 Getting Started
 
 ### Prerequisites

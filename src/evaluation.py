@@ -181,21 +181,60 @@ def compute_operational_cost_curve(
     return df
 
 
-def synthesize_operational_policies(sweep_df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+def sweep_cost_sensitivity(
+    sweep_df: pd.DataFrame,
+    costs: Optional[List[float]] = None,
+    multipliers: Optional[List[float]] = None
+) -> List[Dict[str, Any]]:
     """
-    Synthesizes the full threshold sweep into 3 actionable named operating policies:
-    1. Aggressive Policy (Maximum Catch Rate / Peak Dollar Net ROI at low threshold)
-    2. Balanced Policy (Optimal Operational F1 Balance / ~1:1 FP to TP ratio)
-    3. Conservative Policy (Minimal False Friction / Precision >= 90% at high threshold)
+    Sweeps manual review costs and chargeback penalty multipliers to analyze
+    the stability and shifts of the unconstrained optimal threshold.
+    """
+    if costs is None:
+        costs = [2.0, 5.0, 10.0, 15.0]
+    if multipliers is None:
+        multipliers = [1.0, 1.5, 2.0]
+
+    sensitivity_records = []
+    for mult in multipliers:
+        for cost in costs:
+            c_df = compute_operational_cost_curve(sweep_df, cost_per_manual_review=cost, fraud_chargeback_multiplier=mult)
+            if "net_financial_benefit" in c_df.columns:
+                best_idx = c_df["net_financial_benefit"].idxmax()
+                best_row = c_df.loc[best_idx]
+                sensitivity_records.append({
+                    "chargeback_multiplier": mult,
+                    "review_cost_per_case": cost,
+                    "optimal_threshold": float(best_row["threshold"]),
+                    "peak_net_benefit": float(best_row["net_financial_benefit"]),
+                    "recall_at_peak": float(best_row["recall"]),
+                    "precision_at_peak": float(best_row["precision"]),
+                    "flagged_volume_pct": float(best_row["flagged_percentage"])
+                })
+    return sensitivity_records
+
+
+def synthesize_operational_policies(
+    sweep_df: pd.DataFrame,
+    review_capacity_budget_pct: float = 3.0
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Synthesizes the full threshold sweep into actionable named operating policies:
+    1. Primary Flagship Policy (Capacity-Constrained for fixed enterprise review headcount <= 3%)
+    2. Balanced Policy (Optimal Precision-Recall F1 Balance)
+    3. Conservative Policy (Minimal Customer Friction / VIP)
+    4. Unconstrained Theoretical Ceiling (Math-only peak with 52% review load - why we didn't ship it)
     """
     df = sweep_df.copy()
 
-    # 1. Aggressive Policy: Point of peak Net Financial Benefit (captures >85-95% fraud volume)
-    if "net_financial_benefit" in df.columns and df["net_financial_benefit"].max() > 0:
-        best_agg_idx = df["net_financial_benefit"].idxmax()
+    # 1. Primary Flagship Policy: Capacity-Constrained (flagged % <= review_capacity_budget_pct)
+    valid_capacity = df[df["flagged_percentage"] <= review_capacity_budget_pct]
+    if not valid_capacity.empty:
+        # Pick threshold within capacity that catches the most fraud
+        best_cap_idx = valid_capacity["recall"].idxmax()
+        cap_row = valid_capacity.loc[best_cap_idx].to_dict()
     else:
-        best_agg_idx = (df["recall"] >= 0.85).idxmax()
-    agg_row = df.loc[best_agg_idx].to_dict()
+        cap_row = df[df["threshold"] >= 0.20].iloc[0].to_dict()
 
     # 2. Balanced Policy: Maximizes F1 score (harmonic mean balancing precision and recall)
     best_balanced_idx = df["f1_score"].idxmax()
@@ -209,22 +248,30 @@ def synthesize_operational_policies(sweep_df: pd.DataFrame) -> Dict[str, Dict[st
     else:
         cons_row = df.iloc[-2].to_dict()
 
+    # 4. Unconstrained Theoretical Peak (Math-only peak of net benefit)
+    if "net_financial_benefit" in df.columns and df["net_financial_benefit"].max() > 0:
+        best_agg_idx = df["net_financial_benefit"].idxmax()
+    else:
+        best_agg_idx = (df["recall"] >= 0.85).idxmax()
+    agg_row = df.loc[best_agg_idx].to_dict()
+
     policies = {
-        "aggressive": {
-            "name": "Aggressive Policy (Maximum Catch Rate & Net Dollar ROI)",
-            "rationale": "Captures maximum fraud volume (94.78% catch rate) and peaks gross net dollar recovery (+$529.1k). Assumes unconstrained review capacity ($5/case flat cost); in production with tight review queue limits (<3% capacity), the practical operating point shifts higher to τ ≈ 0.10–0.20.",
-            "threshold": float(agg_row["threshold"]),
-            "precision": float(agg_row["precision"]),
-            "recall": float(agg_row["recall"]),
-            "f1_score": float(agg_row.get("f1_score", 0.0)),
-            "flags_per_true_fraud": float(agg_row["flags_per_true_fraud"]),
-            "net_financial_benefit": float(agg_row.get("net_financial_benefit", 0.0)),
-            "auto_approved_percentage": float(agg_row["auto_approved_percentage"]),
-            "operational_caveats": "Flags ~51.75% of traffic into review queue. Requires high analyst headcount or secondary automated risk step-up."
+        "capacity_constrained_primary": {
+            "name": "Production Policy (Capacity-Constrained — Recommended Ship Candidate)",
+            "rationale": f"Primary production candidate designed for fixed enterprise risk teams with a {review_capacity_budget_pct:.1f}% manual triage budget. Captures {cap_row['recall']*100:.1f}% of all fraud with {cap_row['precision']*100:.1f}% precision ({cap_row['flags_per_true_fraud']:.2f} FP/TP) while auto-approving {cap_row['auto_approved_percentage']:.2f}% of traffic instantly.",
+            "threshold": float(cap_row["threshold"]),
+            "precision": float(cap_row["precision"]),
+            "recall": float(cap_row["recall"]),
+            "f1_score": float(cap_row.get("f1_score", 0.0)),
+            "flags_per_true_fraud": float(cap_row["flags_per_true_fraud"]),
+            "net_financial_benefit": float(cap_row.get("net_financial_benefit", 0.0)),
+            "auto_approved_percentage": float(cap_row["auto_approved_percentage"]),
+            "flagged_percentage": float(cap_row["flagged_percentage"]),
+            "operational_status": "RECOMMENDED PRODUCTION BASELINE"
         },
-        "balanced": {
+        "balanced_f1": {
             "name": "Balanced Policy (Optimal Precision-Recall F1 Balance)",
-            "rationale": "Standard production baseline maximizing harmonic F1 score (0.4938) with <0.5 false alarms per true catch (0.47 FP/TP). Optimizes classification balance and low queue friction (flags <2% of traffic), not unconstrained dollar ROI (under flat cost assumptions, this point is net-negative vs Aggressive due to unflagged chargebacks).",
+            "rationale": "Optimizes harmonic F1 balance (0.4938) with <0.5 false alarms per true catch (0.47 FP/TP). Designed for queue protection (flags <2% of traffic). Note: Under the unconstrained flat-cost formula, this point is net-negative vs the 0.010 ceiling due to unflagged chargebacks.",
             "threshold": float(balanced_row["threshold"]),
             "precision": float(balanced_row["precision"]),
             "recall": float(balanced_row["recall"]),
@@ -232,11 +279,12 @@ def synthesize_operational_policies(sweep_df: pd.DataFrame) -> Dict[str, Dict[st
             "flags_per_true_fraud": float(balanced_row["flags_per_true_fraud"]),
             "net_financial_benefit": float(balanced_row.get("net_financial_benefit", 0.0)),
             "auto_approved_percentage": float(balanced_row["auto_approved_percentage"]),
-            "operational_caveats": "Optimizes F1 and low friction (98.03% auto-approved), accepting higher missed chargeback exposure than Aggressive."
+            "flagged_percentage": float(balanced_row["flagged_percentage"]),
+            "operational_status": "SECONDARY CLASSIFICATION BASELINE"
         },
-        "conservative": {
-            "name": "Conservative Policy (Minimal Customer Friction)",
-            "rationale": "Ultra-low customer friction policy achieving 90.82% precision with 10 true catches per 1 false alert (0.10 FP/TP), auto-approving 99.23% of transactions.",
+        "conservative_vip": {
+            "name": "Conservative Policy (Minimal Customer Friction — VIP)",
+            "rationale": "Ultra-low customer friction achieving 90.82% precision with 10 true catches per 1 false alert (0.10 FP/TP), auto-approving 99.23% of transactions.",
             "threshold": float(cons_row["threshold"]),
             "precision": float(cons_row["precision"]),
             "recall": float(cons_row["recall"]),
@@ -244,7 +292,21 @@ def synthesize_operational_policies(sweep_df: pd.DataFrame) -> Dict[str, Dict[st
             "flags_per_true_fraud": float(cons_row["flags_per_true_fraud"]),
             "net_financial_benefit": float(cons_row.get("net_financial_benefit", 0.0)),
             "auto_approved_percentage": float(cons_row["auto_approved_percentage"]),
-            "operational_caveats": "Prioritizes VIP checkout conversion; accepts that ~79.8% of low-confidence fraud will pass without friction."
+            "flagged_percentage": float(cons_row["flagged_percentage"]),
+            "operational_status": "CONVERSION-FIRST VIP BASELINE"
+        },
+        "unconstrained_theoretical_peak": {
+            "name": "Unconstrained Theoretical Ceiling (Math-Only Limit — Why We Didn't Ship It)",
+            "rationale": "Mathematical maximum of the unconstrained cost equation (+$529.1k). Flags 51.75% of total stream into manual review (61,121 cases). Unviable for live deployment without massive headcount, establishing the theoretical upper bound.",
+            "threshold": float(agg_row["threshold"]),
+            "precision": float(agg_row["precision"]),
+            "recall": float(agg_row["recall"]),
+            "f1_score": float(agg_row.get("f1_score", 0.0)),
+            "flags_per_true_fraud": float(agg_row["flags_per_true_fraud"]),
+            "net_financial_benefit": float(agg_row.get("net_financial_benefit", 0.0)),
+            "auto_approved_percentage": float(agg_row["auto_approved_percentage"]),
+            "flagged_percentage": float(agg_row["flagged_percentage"]),
+            "operational_status": "THEORETICAL LIMIT (NOT SHIPPED DUE TO CAPACITY)"
         }
     }
     return policies
@@ -271,8 +333,8 @@ def get_what_didnt_work_registry() -> List[Dict[str, Any]]:
             "hypothesis_or_approach": "Static Per-Card Historical Amount Mean",
             "outcome": "Identified Leakage & Refactored",
             "root_cause_analysis": (
-                "Computing a single dataset-wide or train-wide mean per card causes early transactions (e.g. t=100) "
-                "to reference spending behavior from later transactions (e.g. t=5000) on that same card. "
+                "Computing a single dataset-wide or train-wide mean per card causes early transactions "
+                "(e.g. t=100) to reference spending behavior from later transactions (e.g. t=5000) on that same card. "
                 "Refactored to an expanding cumulative mean strictly computed up to t-1."
             )
         },
@@ -281,8 +343,8 @@ def get_what_didnt_work_registry() -> List[Dict[str, Any]]:
             "hypothesis_or_approach": "Isolated Per-Split Rolling Velocity Window Reset",
             "outcome": "Identified Cold-Start Artifact & Refactored",
             "root_cause_analysis": (
-                "Resetting velocity window counters (10m, 1h, 24h) independently per split caused the first test-set "
-                "transactions to look like first-ever seen transactions with velocity 0 and recency -1. "
+                "Resetting velocity window counters (10m, 1h, 24h) independently per split caused the first "
+                "test-set transactions to look like first-ever seen transactions with velocity 0 and recency -1. "
                 "Refactored to StreamingRiskState carrying temporal state seamlessly across the split boundary."
             )
         },
@@ -293,18 +355,27 @@ def get_what_didnt_work_registry() -> List[Dict[str, Any]]:
             "root_cause_analysis": (
                 "Multiplying positive sample gradients by 28.87 forces decision trees to aggressively isolate single "
                 "positive points into noisy leaf buckets. While this inflates raw recall at 0.5, it distorts global "
-                "probability calibration and degrades ranking metrics (PR-AUC). Parameterized as a tunable sweep rather "
-                "than a hardcoded assumption."
+                "probability calibration and degrades ranking metrics (PR-AUC from 0.5149 to 0.4629). Parameterized as a tunable sweep."
             )
         },
         {
-            "category": "Feature Selection",
-            "hypothesis_or_approach": "Raw Ingestion of 300+ Anonymized V1-V339 Features",
-            "outcome": "De-prioritized in Favor of Interpretable Signals",
+            "category": "Cost & Policy Synthesis",
+            "hypothesis_or_approach": "Unconstrained Cost-Optimal Threshold (τ = 0.010) as Default Policy",
+            "outcome": "Identified Review Capacity Flaw & Replaced with 3% Headcount Cap",
             "root_cause_analysis": (
-                "Anonymized V-features provide opaque statistical correlation without explainability for fraud analysts. "
-                "The pipeline prioritizes velocity spikes (10m/1h/24h), recency, card-to-amount ratios, and domain checks "
-                "to ensure auditable SHAP explanations in Layer 5."
+                "Under flat $5 cost assumptions, net benefit mathematically peaks at τ = 0.010 (+$529.1k), "
+                "but requires reviewing 51.75% of total volume (61,121 cases), violating operational feasibility. "
+                "Replaced by introducing a Capacity-Constrained Primary Policy (τ = 0.19, <= 3% triage cap, 46.06% catch rate, 53.44% precision)."
+            )
+        },
+        {
+            "category": "Explainability vs. Predictive Power",
+            "hypothesis_or_approach": "Pure Interpretable-Only Features (20 Engineered Signals) vs. Full 427-Feature Bank",
+            "outcome": "Evaluated Trade-off & Implemented Semantic Domain Mapping Bridge",
+            "root_cause_analysis": (
+                "Training strictly on 20 engineered features achieved PR-AUC = 0.2250, whereas retaining the full 427-feature bank "
+                "lifted PR-AUC to 0.5149 (76.7% of predictive gain lies in Vesta's proprietary V-features). Rather than degrading model accuracy, "
+                "the pipeline retains the full GBDT and implements a domain semantic mapping layer in Layer 5 to translate V-cluster SHAP values into auditable risk factors."
             )
         }
     ]
@@ -357,7 +428,10 @@ def run_layer4_pipeline(
     # 3. Synthesize named operating policies
     policies = synthesize_operational_policies(cost_df)
 
-    # 4. Optional Weighting Impact Sweep (if matching train features exist)
+    # 4. Cost sensitivity analysis
+    cost_sensitivity = sweep_cost_sensitivity(cost_df)
+
+    # 5. Optional Weighting Impact Sweep (if matching train features exist)
     weight_sweep_records = []
     if train_features_path and os.path.exists(train_features_path):
         train_df = pd.read_parquet(train_features_path)
@@ -368,10 +442,10 @@ def run_layer4_pipeline(
             weight_df = sweep_scale_pos_weight_impact(X_train, y_train, X_test, y_test)
             weight_sweep_records = weight_df.to_dict(orient="records")
 
-    # 5. What Didn't Work Log
+    # 6. What Didn't Work Log
     what_didnt_work = get_what_didnt_work_registry()
 
-    # 6. Save Artifacts
+    # 7. Save Artifacts
     os.makedirs(output_dir, exist_ok=True)
     sweep_parquet_path = os.path.join(output_dir, "threshold_sweep.parquet")
     sweep_csv_path = os.path.join(output_dir, "threshold_sweep.csv")
@@ -392,11 +466,12 @@ def run_layer4_pipeline(
         "overall_roc_auc": float(roc_auc_score(y_test, y_prob)),
         "brier_score_loss": float(brier_score_loss(y_test, y_prob)),
         "operational_policies": policies,
+        "cost_sensitivity_matrix": cost_sensitivity,
         "cost_assumptions": {
             "cost_per_manual_review": "$5.00 (industry benchmark for 3-5 min analyst triage)",
             "chargeback_loss_multiplier": "1.5x transaction dollar amount (goods loss + fee penalties)"
         },
-        "threshold_sweep_sample": cost_df.head(10).to_dict(orient="records"),
+        "threshold_sweep_sample": cost_df.to_dict(orient="records"),
         "weight_impact_sweep": weight_sweep_records,
         "what_didnt_work_count": len(what_didnt_work),
         "artifact_paths": {

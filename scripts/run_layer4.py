@@ -71,14 +71,14 @@ def main():
         print(f"• Overall ROC-AUC:         {results['overall_roc_auc']:.4f}")
         print(f"• Brier Score Loss:        {results['brier_score_loss']:.4f} (Probability Calibration)")
 
-        print("\n📊 MULTI-THRESHOLD DECISION SWEEP (Sample Operating Points):")
+        print("\n📊 MULTI-THRESHOLD DECISION SWEEP (Granular Operating Points):")
         print(f"{'Thresh':<8} | {'Precision':<10} | {'Recall':<10} | {'F1':<8} | {'FP / TP':<10} | {'Flagged %':<10} | {'Approved %':<10}")
         print("-" * 88)
         
-        sample_thresholds = [0.01, 0.05, 0.10, 0.20, 0.30, 0.50, 0.80]
+        sample_thresholds = [0.01, 0.02, 0.03, 0.05, 0.075, 0.10, 0.15, 0.20, 0.30, 0.50, 0.80]
         sample_rows = sweep_df[sweep_df["threshold"].isin(sample_thresholds)]
         if sample_rows.empty:
-            sample_rows = sweep_df.iloc[::3]
+            sample_rows = sweep_df.iloc[::2]
 
         for _, row in sample_rows.iterrows():
             fp_str = f"{row['flags_per_true_fraud']:.2f}" if row['flags_per_true_fraud'] >= 0 else "N/A"
@@ -87,17 +87,25 @@ def main():
 
         print("\n🎯 SYNTHESIZED OPERATIONAL POLICIES:")
         policies = results.get("operational_policies", {})
-        for p_key in ["aggressive", "balanced", "conservative"]:
-            p = policies.get(p_key, {})
-            print(f"\n• {p.get('name', p_key.capitalize())} [Threshold τ = {p.get('threshold', 0.0):.3f}]:")
-            print(f"  - Precision: {p.get('precision', 0.0)*100:.2f}% | Recall: {p.get('recall', 0.0)*100:.2f}% | FP/TP: {p.get('flags_per_true_fraud', 0.0):.2f}")
-            print(f"  - Auto-Approved: {p.get('auto_approved_percentage', 0.0):.2f}% of traffic")
-            print(f"  - Strategic Intent: {p.get('rationale', '')}")
+        policy_order = [
+            "capacity_constrained_primary",
+            "balanced_f1",
+            "conservative_vip",
+            "unconstrained_theoretical_peak"
+        ]
+        for p_key in policy_order:
+            if p_key in policies:
+                p = policies[p_key]
+                print(f"\n• {p.get('name', p_key)} [Threshold τ = {p.get('threshold', 0.0):.3f}]:")
+                print(f"  - Status:        {p.get('operational_status', '')}")
+                print(f"  - Precision:     {p.get('precision', 0.0)*100:.2f}% | Catch Rate (Recall): {p.get('recall', 0.0)*100:.2f}% | FP/TP: {p.get('flags_per_true_fraud', 0.0):.2f}")
+                print(f"  - Traffic Split: Flagged: {p.get('flagged_percentage', 0.0):.2f}% | Auto-Approved: {p.get('auto_approved_percentage', 0.0):.2f}%")
+                print(f"  - Strategic Rationale: {p.get('rationale', '')}")
 
         print("\n📝 'WHAT DIDN'T WORK' REGISTRY & LESSONS LEARNED:")
         for idx, entry in enumerate(get_what_didnt_work_registry(), 1):
             print(f"\n{idx}. [{entry['category']}] {entry['hypothesis_or_approach']}")
-            print(f"   • Status: {entry['outcome']}")
+            print(f"   • Status:   {entry['outcome']}")
             print(f"   • Analysis: {entry['root_cause_analysis']}")
 
         print("\n📁 GENERATED ARTIFACTS:")
