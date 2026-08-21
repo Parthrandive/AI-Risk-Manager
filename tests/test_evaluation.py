@@ -53,10 +53,14 @@ def test_sweep_decision_thresholds(synthetic_eval_data):
 def test_operational_cost_curve(synthetic_eval_data):
     y_true, y_prob, amounts = synthetic_eval_data
     sweep_df = sweep_decision_thresholds(y_true, y_prob, amounts=amounts)
-    cost_df = compute_operational_cost_curve(sweep_df, cost_per_manual_review=5.0)
+    cost_df = compute_operational_cost_curve(sweep_df, cost_per_manual_review=5.0, fraud_chargeback_multiplier=1.5)
 
     assert "manual_review_cost" in cost_df.columns
     assert "net_financial_benefit" in cost_df.columns
+
+    # Exact arithmetic verification across all rows
+    expected_net = (cost_df["fraud_loss_prevented"] - cost_df["manual_review_cost"] - cost_df["missed_fraud_loss"]).round(2)
+    assert np.allclose(cost_df["net_financial_benefit"], expected_net, atol=0.01)
 
 
 def test_what_didnt_work_registry():

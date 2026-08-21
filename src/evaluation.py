@@ -211,35 +211,40 @@ def synthesize_operational_policies(sweep_df: pd.DataFrame) -> Dict[str, Dict[st
 
     policies = {
         "aggressive": {
-            "name": "Aggressive Policy (Maximum Catch Rate & Net ROI)",
-            "rationale": "Captures maximum fraud volume (>94% catch rate) and peaks total net dollar recovery ($529k), absorbing higher analyst review volume.",
+            "name": "Aggressive Policy (Maximum Catch Rate & Net Dollar ROI)",
+            "rationale": "Captures maximum fraud volume (94.78% catch rate) and peaks gross net dollar recovery (+$529.1k). Assumes unconstrained review capacity ($5/case flat cost); in production with tight review queue limits (<3% capacity), the practical operating point shifts higher to τ ≈ 0.10–0.20.",
             "threshold": float(agg_row["threshold"]),
             "precision": float(agg_row["precision"]),
             "recall": float(agg_row["recall"]),
             "f1_score": float(agg_row.get("f1_score", 0.0)),
             "flags_per_true_fraud": float(agg_row["flags_per_true_fraud"]),
             "net_financial_benefit": float(agg_row.get("net_financial_benefit", 0.0)),
-            "auto_approved_percentage": float(agg_row["auto_approved_percentage"])
+            "auto_approved_percentage": float(agg_row["auto_approved_percentage"]),
+            "operational_caveats": "Flags ~51.75% of traffic into review queue. Requires high analyst headcount or secondary automated risk step-up."
         },
         "balanced": {
             "name": "Balanced Policy (Optimal Precision-Recall F1 Balance)",
-            "rationale": "Standard production operating baseline maximizing F1 score (0.4938) with <1 false positive per true catch (0.82 FP/TP).",
+            "rationale": "Standard production baseline maximizing harmonic F1 score (0.4938) with <0.5 false alarms per true catch (0.47 FP/TP). Optimizes classification balance and low queue friction (flags <2% of traffic), not unconstrained dollar ROI (under flat cost assumptions, this point is net-negative vs Aggressive due to unflagged chargebacks).",
             "threshold": float(balanced_row["threshold"]),
             "precision": float(balanced_row["precision"]),
             "recall": float(balanced_row["recall"]),
             "f1_score": float(balanced_row["f1_score"]),
             "flags_per_true_fraud": float(balanced_row["flags_per_true_fraud"]),
-            "auto_approved_percentage": float(balanced_row["auto_approved_percentage"])
+            "net_financial_benefit": float(balanced_row.get("net_financial_benefit", 0.0)),
+            "auto_approved_percentage": float(balanced_row["auto_approved_percentage"]),
+            "operational_caveats": "Optimizes F1 and low friction (98.03% auto-approved), accepting higher missed chargeback exposure than Aggressive."
         },
         "conservative": {
             "name": "Conservative Policy (Minimal Customer Friction)",
-            "rationale": "Ultra-low false alarm rate (10 true catches per 1 false alert) with 90.8% precision, auto-approving >99.2% of transactions.",
+            "rationale": "Ultra-low customer friction policy achieving 90.82% precision with 10 true catches per 1 false alert (0.10 FP/TP), auto-approving 99.23% of transactions.",
             "threshold": float(cons_row["threshold"]),
             "precision": float(cons_row["precision"]),
             "recall": float(cons_row["recall"]),
             "f1_score": float(cons_row.get("f1_score", 0.0)),
             "flags_per_true_fraud": float(cons_row["flags_per_true_fraud"]),
-            "auto_approved_percentage": float(cons_row["auto_approved_percentage"])
+            "net_financial_benefit": float(cons_row.get("net_financial_benefit", 0.0)),
+            "auto_approved_percentage": float(cons_row["auto_approved_percentage"]),
+            "operational_caveats": "Prioritizes VIP checkout conversion; accepts that ~79.8% of low-confidence fraud will pass without friction."
         }
     }
     return policies
