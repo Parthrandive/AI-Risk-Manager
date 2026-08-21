@@ -13,6 +13,102 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def reduce_memory_usage(df: pd.DataFrame, verbose: bool = True) -> pd.DataFrame:
+    """
+    Downcasts numeric dtypes (float64 -> float32, int64 -> int32/int16/int8)
+    to significantly reduce memory footprint before downstream processing.
+    Safe for Layer 1 as it operates row-wise without dataset-wide statistical aggregation.
+    """
+    start_mem = df.memory_usage().sum() / 1024**2
+    
+    for col in df.columns:
+        col_type = df[col].dtype
+        
+        if pd.api.types.is_numeric_dtype(col_type):
+            c_min = df[col].min()
+            c_max = df[col].max()
+            
+            if pd.api.types.is_integer_dtype(col_type):
+                if c_min >= np.iinfo(np.int8).min and c_max <= np.iinfo(np.int8).max:
+                    df[col] = df[col].astype(np.int8)
+                elif c_min >= np.iinfo(np.int16).min and c_max <= np.iinfo(np.int16).max:
+                    df[col] = df[col].astype(np.int16)
+                elif c_min >= np.iinfo(np.int32).min and c_max <= np.iinfo(np.int32).max:
+                    df[col] = df[col].astype(np.int32)
+                else:
+                    df[col] = df[col].astype(np.int64)
+            elif pd.api.types.is_float_dtype(col_type):
+                # Using float32 for floating point numbers
+                df[col] = df[col].astype(np.float32)
+
+    end_mem = df.memory_usage().sum() / 1024**2
+    if verbose:
+        reduction = (1 - end_mem / start_mem) * 100 if start_mem > 0 else 0
+        logger.info(
+            f"Memory downcasting: {start_mem:.2f} MB -> {end_mem:.2f} MB ({reduction:.1f}% reduction)"
+        )
+    return df
+
+
+def perform_sanity_checks(
+    df: pd.DataFrame,
+    id_col: str = "TransactionID",
+    time_col: str = "TransactionDT",
+    amt_col: str = "TransactionAmt",
+    target_col: str = "isFraud"
+) -> pd.DataFrame:
+    """
+    Executes leak-free data sanity checks:
+    1. Removes exact duplicate rows if any exist.
+    2. Verifies unique TransactionID.
+    3. Verifies non-negative TransactionAmt.
+    4. Verifies no nulls in time column (TransactionDT).
+    5. Verifies target (isFraud) is strictly 0/1 without nulls.
+    """
+    logger.info("Running Layer 1 data cleanliness and sanity checks...")
+    
+    # 1. Exact duplicate rows
+    init_len = len(df)
+    df = df.drop_duplicates().reset_index(drop=True)
+    dropped_dups = init_len - len(df)
+    if dropped_dups > 0:
+        logger.warning(f"Dropped {dropped_dups} exact duplicate rows.")
+
+    # 2. TransactionID uniqueness
+    if id_col in df.columns:
+        duplicate_ids = df[id_col].duplicated().sum()
+        if duplicate_ids > 0:
+            raise ValueError(f"Found {duplicate_ids} duplicate '{id_col}' values.")
+        logger.info(f"✔ TransactionID uniqueness verified (0 duplicates).")
+
+    # 3. Non-negative TransactionAmt
+    if amt_col in df.columns:
+        negative_amt = (df[amt_col] < 0).sum()
+        if negative_amt > 0:
+            raise ValueError(f"Found {negative_amt} negative '{amt_col}' values.")
+        logger.info(f"✔ Transaction amount validity verified (all {amt_col} >= 0).")
+
+    # 4. Monotonic-safe TransactionDT (no nulls)
+    if time_col in df.columns:
+        null_time = df[time_col].isna().sum()
+        if null_time > 0:
+            raise ValueError(f"Found {null_time} null values in time column '{time_col}'.")
+        logger.info(f"✔ Time column '{time_col}' verified (0 nulls).")
+
+    # 5. Strict 0/1 isFraud
+    if target_col in df.columns:
+        null_target = df[target_col].isna().sum()
+        if null_target > 0:
+            raise ValueError(f"Found {null_target} null values in target column '{target_col}'.")
+        
+        unique_targets = set(df[target_col].unique())
+        if not unique_targets.issubset({0, 1}):
+            raise ValueError(f"Invalid target values in '{target_col}': {unique_targets}. Must be {{0, 1}}.")
+        logger.info(f"✔ Target column '{target_col}' verified (strictly binary {{0, 1}}, 0 nulls).")
+
+    return df
+
+
 def load_and_merge(
     transaction_path: str,
     identity_path: str,
@@ -217,34 +313,51 @@ def run_layer1_pipeline(
     quantile: float = 0.8,
     id_col: str = "TransactionID",
     time_col: str = "TransactionDT",
-    target_col: str = "isFraud"
+    amt_col: str = "TransactionAmt",
+    target_col: str = "isFraud",
+    downcast_memory: bool = True
 ) -> Dict[str, Any]:
     """
-    Orchestrates the entire Layer 1 data ingestion, chronological splitting,
-    leakage verification, and parquet export pipeline.
+    Orchestrates the complete Layer 1 pipeline:
+    1. Load and merge raw transactions & identity
+    2. Data sanity checks (drop duplicates, assert no negative amount, assert valid target)
+    3. Memory downcasting (float64 -> float32, int64 -> int32/int16/int8)
+    4. Chronological sorting
+    5. Time-quantile boundary calculation
+    6. Non-shuffled train/test partition
+    7. Class imbalance calculation & drift analysis
+    8. Zero-leakage verification
+    9. Parquet export
     """
     logger.info("=== Starting Layer 1: Data & Chronological Split Pipeline ===")
     
     # 1. Load and merge
     df = load_and_merge(transaction_path, identity_path, id_col=id_col)
     
-    # 2. Sort chronologically
+    # 2. Sanity checks (cleanliness before split)
+    df = perform_sanity_checks(df, id_col=id_col, time_col=time_col, amt_col=amt_col, target_col=target_col)
+
+    # 3. Downcast memory
+    if downcast_memory:
+        df = reduce_memory_usage(df)
+
+    # 4. Sort chronologically
     df_sorted = sort_chronological(df, time_col=time_col)
     
-    # 3. Pick split boundary
+    # 5. Pick split boundary
     boundary = compute_split_boundary(df_sorted, quantile=quantile, time_col=time_col)
     
-    # 4. Split data
+    # 6. Split data
     train_df, test_df = split_data(df_sorted, boundary=boundary, time_col=time_col)
     
-    # 5. Class imbalance stats
+    # 7. Class imbalance stats
     imbalance_stats = compute_imbalance_stats(train_df, test_df, target_col=target_col)
     logger.info(f"Class imbalance statistics: {json.dumps(imbalance_stats, indent=2)}")
     
-    # 6. Verify zero leakage
+    # 8. Verify zero leakage
     verification = verify_no_leakage(train_df, test_df, boundary, id_col=id_col, time_col=time_col)
     
-    # 7. Save splits
+    # 9. Save splits
     metadata = {
         "quantile": quantile,
         "boundary_transaction_dt": boundary,

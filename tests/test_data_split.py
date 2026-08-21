@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from src.data_split import (
     load_and_merge,
+    reduce_memory_usage,
+    perform_sanity_checks,
     sort_chronological,
     compute_split_boundary,
     split_data,
@@ -24,15 +26,12 @@ from src.data_split import (
 @pytest.fixture
 def sample_data():
     """Creates synthetic transaction and identity DataFrames for testing."""
-    # 100 transactions spanning TransactionDT from 100 to 10000
     n = 100
     transaction_ids = np.arange(1000, 1000 + n)
     transaction_dt = np.sort(np.random.choice(np.arange(100, 10000), size=n, replace=False))
-    # Randomly shuffle transaction_dt initially to test sorting
     shuffled_dt = transaction_dt.copy()
     np.random.shuffle(shuffled_dt)
     
-    # Approx 5% fraud
     is_fraud = np.zeros(n, dtype=int)
     is_fraud[:5] = 1
     np.random.shuffle(is_fraud)
@@ -40,12 +39,11 @@ def sample_data():
     df_trans = pd.DataFrame({
         "TransactionID": transaction_ids,
         "TransactionDT": shuffled_dt,
-        "TransactionAmt": np.random.uniform(10, 500, size=n),
+        "TransactionAmt": np.random.uniform(10, 500, size=n).astype(np.float64),
         "isFraud": is_fraud,
-        "card1": np.random.randint(1000, 9999, size=n)
+        "card1": np.random.randint(1000, 9999, size=n, dtype=np.int64)
     })
 
-    # Identity data for half the transactions
     df_id = pd.DataFrame({
         "TransactionID": transaction_ids[:50],
         "id_01": np.random.uniform(-10, 0, size=50),
@@ -53,6 +51,41 @@ def sample_data():
     })
 
     return df_trans, df_id
+
+
+def test_sanity_checks_pass(sample_data):
+    df_trans, _ = sample_data
+    cleaned = perform_sanity_checks(df_trans)
+    assert len(cleaned) == len(df_trans)
+
+
+def test_sanity_checks_negative_amt_raises():
+    df = pd.DataFrame({
+        "TransactionID": [1, 2],
+        "TransactionDT": [100, 200],
+        "TransactionAmt": [50.0, -10.0],
+        "isFraud": [0, 1]
+    })
+    with pytest.raises(ValueError, match="negative 'TransactionAmt'"):
+        perform_sanity_checks(df)
+
+
+def test_sanity_checks_duplicate_id_raises():
+    df = pd.DataFrame({
+        "TransactionID": [1, 1],
+        "TransactionDT": [100, 200],
+        "TransactionAmt": [50.0, 10.0],
+        "isFraud": [0, 1]
+    })
+    with pytest.raises(ValueError, match="duplicate 'TransactionID'"):
+        perform_sanity_checks(df)
+
+
+def test_reduce_memory_usage(sample_data):
+    df_trans, _ = sample_data
+    assert df_trans["TransactionAmt"].dtype == np.float64
+    downcasted = reduce_memory_usage(df_trans)
+    assert downcasted["TransactionAmt"].dtype == np.float32
 
 
 def test_merge_and_sort(sample_data):
@@ -66,7 +99,7 @@ def test_merge_and_sort(sample_data):
         merged = load_and_merge(t_path, i_path)
         assert len(merged) == len(df_trans)
         assert "DeviceType" in merged.columns
-        assert merged["DeviceType"].isna().sum() == 50  # 50 rows had no identity match
+        assert merged["DeviceType"].isna().sum() == 50
 
         sorted_df = sort_chronological(merged, "TransactionDT")
         assert sorted_df["TransactionDT"].is_monotonic_increasing
@@ -83,7 +116,6 @@ def test_split_boundary_and_partition(sample_data):
     assert len(train_df) == int(len(sorted_df) * 0.8)
     assert len(test_df) == int(len(sorted_df) * 0.2)
 
-    # Verify no leakage
     verification = verify_no_leakage(train_df, test_df, boundary)
     assert verification["all_passed"] is True
     assert verification["no_id_overlap"] is True
@@ -97,7 +129,6 @@ def test_leakage_detection_raises_error(sample_data):
     boundary = compute_split_boundary(sorted_df, quantile=0.8)
     train_df, test_df = split_data(sorted_df, boundary=boundary)
 
-    # Intentionally corrupt test_df with a train ID and early timestamp
     corrupted_test = test_df.copy()
     corrupted_test.loc[0, "TransactionID"] = train_df.loc[0, "TransactionID"]
     corrupted_test.loc[0, "TransactionDT"] = train_df.loc[0, "TransactionDT"]
@@ -142,7 +173,6 @@ def test_end_to_end_pipeline(sample_data):
         assert os.path.exists(os.path.join(out_dir, "split_metadata.json"))
         assert metadata["leakage_verification"]["all_passed"] is True
 
-        # Verify parquet can be read back cleanly
         loaded_train = pd.read_parquet(os.path.join(out_dir, "train.parquet"))
         loaded_test = pd.read_parquet(os.path.join(out_dir, "test.parquet"))
         assert len(loaded_train) == metadata["train_records"]
