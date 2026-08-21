@@ -78,19 +78,24 @@ def main():
         print(f"• Grounding Constraints:        Review Budget <= {args.review_budget_pct:.1f}% ({results['calibration_constraints']['max_review_cases_budget']:,} txns) | Auto-Block Precision Floor >= {args.min_autoblock_precision:.1f}%")
 
         print("\n🚦 THREE-WAY TRIAGE TRAFFIC ROUTING DISTRIBUTION:")
-        print("-" * 88)
-        print(f"{'Decision Tier':<24} | {'Volume':<10} | {'Share %':<10} | {'Fraud Caught':<14} | {'Precision / Risk':<18}")
-        print("-" * 88)
+        print("-" * 105)
+        print(f"{'Decision Tier':<22} | {'Volume':<10} | {'Share %':<8} | {'Fraud Impact':<30} | {'Precision / Quality':<22}")
+        print("-" * 105)
         
         app = dist["auto_approve"]
         rev = dist["manual_review_gray_zone"]
         blk = dist["auto_block"]
 
-        print(f"🟢 {'Auto-Approve':<21} | {app['count']:<10,d} | {app['percentage']:<9.2f}% | {app['fraud_count']:<14,d} | Leakage: {app['leakage_rate']:.3f}%")
-        print(f"🟡 {'Manual Review (Gray-Zone)':<21} | {rev['count']:<10,d} | {rev['percentage']:<9.2f}% | {rev['fraud_count']:<14,d} | Precision: {rev['precision']:.2f}% ({rev['flags_per_true_catch']:.2f} FP/TP)")
-        print(f"🔴 {'Auto-Block':<21} | {blk['count']:<10,d} | {blk['percentage']:<9.2f}% | {blk['fraud_count']:<14,d} | Precision: {blk['precision']:.2f}% (False Blocks: {blk['false_block_count']})")
-        print("-" * 88)
-        print(f"🛡️  OVERALL FRAUD CONTAINMENT: {contain['total_caught_fraud']:,} / {contain['total_fraud_cases']:,} Frauds Captured ({contain['gross_recall_pct']:.2f}% Gross Recall)")
+        app_impact = f"{app['missed_fraud_count']:,} Missed ({app['missed_fraud_pct_of_total_fraud']:.1f}% of total)"
+        rev_impact = f"{rev['flagged_fraud_count']:,} Flagged ({rev['flagged_fraud_pct_of_total_fraud']:.1f}% of total)"
+        blk_impact = f"{blk['blocked_fraud_count']:,} Blocked ({blk['blocked_fraud_pct_of_total_fraud']:.1f}% of total)"
+
+        print(f"🟢 {'Auto-Approve':<19} | {app['count']:<10,d} | {app['percentage']:<7.2f}% | {app_impact:<30} | Leakage Rate: {app['leakage_rate']:.3f}%")
+        print(f"🟡 {'Manual Review (Gray)':<19} | {rev['count']:<10,d} | {rev['percentage']:<7.2f}% | {rev_impact:<30} | Queue Prec: {rev['precision']:.2f}% ({rev['flags_per_true_catch']:.2f} FP/TP)")
+        print(f"🔴 {'Auto-Block':<19} | {blk['count']:<10,d} | {blk['percentage']:<7.2f}% | {blk_impact:<30} | Block Prec: {blk['precision']:.2f}% ({blk['false_block_count']} false blocks)")
+        print("-" * 105)
+        print(f"🛡️  GROSS INTERCEPTION RATE: {contain['gross_intercepted_fraud']:,} / {contain['total_fraud_cases']:,} Frauds Flagged/Blocked ({contain['gross_interception_rate_pct']:.2f}%) [Assumes 100% analyst catch on flagged batch]")
+        print(f"🎯 NET CONTAINED FRAUD (EST): {contain['net_contained_fraud_est']:,.1f} / {contain['total_fraud_cases']:,} Frauds Stopped ({contain['net_containment_rate_pct']:.2f}%) [Discounted for realistic 85% analyst resolution efficiency]")
 
         print("\n📋 SAMPLE AUDIT CARDS WITH LOCAL SHAP & OPAQUE SIGNAL TRANSPARENCY:")
         for idx, card in enumerate(results.get("sample_audit_cards", [])[:3], 1):

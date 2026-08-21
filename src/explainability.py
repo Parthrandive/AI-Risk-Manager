@@ -183,15 +183,15 @@ class RiskExplainerGateway:
         elif feature_name in {"card4_encoded", "card6_encoded", "ProductCD_encoded"}:
             if shap_val > 0.02:
                 clean_name = feature_name.replace("_encoded", "")
-                return f"Payment instrument / product category attribute ({clean_name}) carries elevated historical risk."
+                return f"Payment network / card type attribute ({clean_name}) carries elevated historical risk."
 
         elif feature_name in {"addr1", "addr2", "dist1", "dist2"}:
             if shap_val > 0.02:
-                return f"Geographic / billing location routing attribute ({feature_name}) exhibits anomaly."
+                return f"Undocumented categorical address/distance feature ({feature_name}={value:.0f}) contributes positive anomaly weight."
 
         elif feature_name in {"card1", "card2", "card3", "card5"}:
             if shap_val > 0.02:
-                return f"Issuer bank / card bin profile ({feature_name}) exhibits elevated risk score."
+                return f"Undocumented categorical card property feature ({feature_name}={value:.0f}) contributes positive anomaly weight."
 
         return None
 
@@ -399,28 +399,35 @@ def run_layer5_pipeline(
             "auto_approve": {
                 "count": n_approve,
                 "percentage": round(n_approve / total_txns * 100.0, 2),
-                "fraud_count": fraud_in_approve,
+                "missed_fraud_count": fraud_in_approve,
+                "missed_fraud_pct_of_total_fraud": round(fraud_in_approve / total_fraud * 100.0, 2) if total_fraud > 0 else 0.0,
                 "leakage_rate": round(fraud_in_approve / n_approve * 100.0, 3) if n_approve > 0 else 0.0
             },
             "manual_review_gray_zone": {
                 "count": n_review,
                 "percentage": round(n_review / total_txns * 100.0, 2),
-                "fraud_count": fraud_in_review,
+                "flagged_fraud_count": fraud_in_review,
+                "flagged_fraud_pct_of_total_fraud": round(fraud_in_review / total_fraud * 100.0, 2) if total_fraud > 0 else 0.0,
                 "precision": round(review_prec, 2),
                 "flags_per_true_catch": round((n_review - fraud_in_review) / fraud_in_review, 2) if fraud_in_review > 0 else 0.0
             },
             "auto_block": {
                 "count": n_block,
                 "percentage": round(n_block / total_txns * 100.0, 2),
-                "fraud_count": fraud_in_block,
+                "blocked_fraud_count": fraud_in_block,
+                "blocked_fraud_pct_of_total_fraud": round(fraud_in_block / total_fraud * 100.0, 2) if total_fraud > 0 else 0.0,
                 "precision": round(block_prec, 2),
                 "false_block_count": n_block - fraud_in_block
             }
         },
         "overall_fraud_containment": {
             "total_fraud_cases": total_fraud,
-            "total_caught_fraud": total_caught_fraud,
-            "gross_recall_pct": round(total_recall, 2)
+            "gross_intercepted_fraud": total_caught_fraud,
+            "gross_interception_rate_pct": round(total_recall, 2),
+            "assumed_analyst_efficiency_pct": 85.0,
+            "net_contained_fraud_est": round(fraud_in_block + 0.85 * fraud_in_review, 1),
+            "net_containment_rate_pct": round((fraud_in_block + 0.85 * fraud_in_review) / total_fraud * 100.0, 2) if total_fraud > 0 else 0.0,
+            "containment_note": "Gross rate assumes 100% human analyst resolution on flagged cases. Net rate discounts manual review queue by a realistic 85% resolution efficiency."
         },
         "sample_audit_cards": sample_cards[:10],
         "artifact_paths": {

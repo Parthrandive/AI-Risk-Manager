@@ -104,13 +104,15 @@ Decision Threshold Sweep Spectrum:
 
 ### 5. SHAP Explainability + Gray-Zone Triage Gateway
 * **Grounded 3-Way Triage Gateway**:
-  - 🟢 **Auto-Approve (`score < 0.150`)**: **`113,756` transactions (`96.32%` of volume)** approved instantly with zero customer friction and zero reviewer delay.
-  - 🟡 **Manual Review / Gray-Zone (`0.150 <= score < 0.790`)**: **`3,434` transactions (`2.91%` of volume)** routed to the human triage queue, strictly satisfying the $\le 3.0\%$ operational capacity constraint (3,543 cases) and capturing **`1,230` true fraud cases** (precision: `35.82%`, `1.79` FP/TP).
-  - 🔴 **Auto-Block (`score >= 0.790`)**: **`918` transactions (`0.78%` of volume)** automatically blocked with verified **`90.52%` precision** (stopping **`831` high-confidence frauds**).
-  - 🛡️ **Total Fraud Capture**: **`2,061` / `4,064` fraud cases (`50.71%` gross recall)**.
+  - 🟢 **Auto-Approve (`score < 0.150`)**: **`113,756` transactions (`96.32%` of volume)** approved instantly with zero customer friction. *Leakage: `2,003` missed frauds (`49.3%` of test fraud, `1.761%` leakage rate).*
+  - 🟡 **Manual Review / Gray-Zone (`0.150 <= score < 0.790`)**: **`3,434` transactions (`2.91%` of volume)** routed to the human triage queue, strictly satisfying the $\le 3.0\%$ operational capacity constraint (3,543 cases) and flagging **`1,230` frauds** (`30.3%` of test fraud, `35.82%` queue precision, `1.79` FP/TP).
+  - 🔴 **Auto-Block (`score >= 0.790`)**: **`918` transactions (`0.78%` of volume)** automatically blocked with verified **`90.52%` precision** (stopping **`831` frauds**, `20.4%` of test fraud, `87` false blocks).
+  - 🛡️ **Containment Metrics**:
+    - **Gross Interception Rate**: **`50.71%` (`2,061` / `4,064` frauds)** flagged or blocked *(assumes 100% human analyst resolution on flagged batch)*.
+    - **Net Contained Fraud (Discounted)**: **`46.17%` (`1,876.5` / `4,064` frauds)** stopped *(accounting for a realistic 85% analyst resolution efficiency on the manual review queue)*.
 * **Opaque Feature Transparency Protocol**:
-  - Plain-language audit reasons are strictly derived from our **20 verified, engineered domain features**.
-  - Attaches an explicit **Opaque Signal Contribution metric** disclosing when decisions are heavily weighted by Vesta's undisclosed proprietary features (`V1`–`V339`) without inventing unverified semantic narratives.
+  - Plain-language audit reasons are strictly derived from our **20 verified, engineered domain features** without asserting unverified semantic narratives for raw/undocumented variables.
+  - Attaches an explicit **Opaque Signal Contribution metric** disclosing when decisions are heavily weighted by Vesta's undisclosed proprietary features (`V1`–`V339`).
 
 ---
 
