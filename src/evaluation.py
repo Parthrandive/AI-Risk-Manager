@@ -307,7 +307,7 @@ def get_what_didnt_work_registry() -> List[Dict[str, Any]]:
 
 def run_layer4_pipeline(
     test_features_path: str = "data/processed/test_features.parquet",
-    train_features_path: str = "data/processed/train_features.parquet",
+    train_features_path: Optional[str] = None,
     model_path: str = "data/processed/fraud_detector_gbdt.joblib",
     output_dir: str = "data/processed"
 ) -> Dict[str, Any]:
@@ -315,8 +315,8 @@ def run_layer4_pipeline(
     Orchestrates Layer 4:
     1. Loads test features and trained model.
     2. Runs multi-threshold precision/recall/FP cost sweep.
-    3. Runs scale_pos_weight impact analysis.
-    4. Computes operational cost curves.
+    3. Runs scale_pos_weight impact analysis (if matching train features provided).
+    4. Computes operational cost curves and synthesizes 3 named policies.
     5. Formulates and exports the structured 'What Didn't Work' log.
     6. Saves threshold_sweep.parquet, evaluation_summary.json, and what_didnt_work.json.
     """
@@ -352,15 +352,16 @@ def run_layer4_pipeline(
     # 3. Synthesize named operating policies
     policies = synthesize_operational_policies(cost_df)
 
-    # 4. Optional Weighting Impact Sweep (if train features exist)
+    # 4. Optional Weighting Impact Sweep (if matching train features exist)
     weight_sweep_records = []
-    if os.path.exists(train_features_path):
-        logger.info("Analyzing scale_pos_weight impact on ranking and calibration...")
+    if train_features_path and os.path.exists(train_features_path):
         train_df = pd.read_parquet(train_features_path)
-        X_train = train_df[feature_cols]
-        y_train = train_df["isFraud"].astype(int)
-        weight_df = sweep_scale_pos_weight_impact(X_train, y_train, X_test, y_test)
-        weight_sweep_records = weight_df.to_dict(orient="records")
+        if all(c in train_df.columns for c in feature_cols) and "isFraud" in train_df.columns:
+            logger.info("Analyzing scale_pos_weight impact on ranking and calibration...")
+            X_train = train_df[feature_cols]
+            y_train = train_df["isFraud"].astype(int)
+            weight_df = sweep_scale_pos_weight_impact(X_train, y_train, X_test, y_test)
+            weight_sweep_records = weight_df.to_dict(orient="records")
 
     # 5. What Didn't Work Log
     what_didnt_work = get_what_didnt_work_registry()
