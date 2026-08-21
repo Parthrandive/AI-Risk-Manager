@@ -2,12 +2,14 @@
 .DS_Store
 Thumbs.db
 
+# Large Data Files (Keep structure, ignore raw and processed large datasets)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
 # Node
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
 dist/
 build/
 .env
@@ -39,6 +41,7 @@ wheels/
 venv/
 ENV/
 .venv/
+.pytest_cache/
 
 # IDE & Editors
 .idea/
