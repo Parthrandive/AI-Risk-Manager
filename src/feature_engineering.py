@@ -166,8 +166,8 @@ class RiskFeaturePipeline:
         # Sort ascending by TransactionDT
         df = df.sort_values(by=self.time_col, ascending=True).reset_index(drop=True)
         
-        card_proxy = self.create_card_proxy(df)
-        device_proxy = self.create_device_proxy(df)
+        card_list = self.create_card_proxy(df).tolist()
+        device_list = self.create_device_proxy(df).tolist()
         
         time_s = df[self.time_col].values
         amt_s = df[self.amt_col].fillna(self.global_amt_median).values if self.amt_col in df.columns else np.zeros(len(df))
@@ -186,8 +186,8 @@ class RiskFeaturePipeline:
         for i in range(n):
             t = float(time_s[i])
             amt = float(amt_s[i])
-            card = card_proxy.iloc[i]
-            dev = device_proxy.iloc[i]
+            card = card_list[i]
+            dev = device_list[i]
 
             # 1. Recency
             if card in st.last_card_time:

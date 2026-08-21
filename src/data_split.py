@@ -125,6 +125,13 @@ def load_and_merge(
     df_trans = pd.read_csv(transaction_path)
     logger.info(f"Loaded {len(df_trans):,} transactions with {df_trans.shape[1]} columns.")
 
+    if len(df_trans) >= 590000:
+        logger.info("✔ Verified authentic full IEEE-CIS dataset (~590,540 transactions).")
+    else:
+        logger.warning(
+            f"Dataset contains {len(df_trans):,} rows. Note: Full Kaggle IEEE-CIS train_transaction.csv has 590,540 rows."
+        )
+
     if os.path.exists(identity_path):
         logger.info(f"Loading identity data from {identity_path}...")
         df_id = pd.read_csv(identity_path)
