@@ -97,10 +97,20 @@ Decision Threshold Sweep Spectrum:
 
 ### 3. Gradient-Boosted Classifiers (XGBoost & LightGBM)
 * **Execution**: Trains `XGBoost` and `LightGBM` GBDTs alongside a `LogisticRegression` baseline.
-* **Feature Set Comparison**:
-  - **Full 427-Feature GBDT**: Achieves **`0.5149` PR-AUC** (76.7% of predictive gain lies in Vesta's proprietary V-features).
-  - **20-Feature Interpretable-Only GBDT**: Achieves **`0.2250` PR-AUC** (relying on `is_same_email_domain`, `card6`, `addr2`, `DeviceType`, `TransactionAmt`).
-  - *Engineering Decision*: Retain full 427-feature model for live defense scoring, and implement a domain semantic mapping layer in Layer 5 to translate V-cluster SHAP contributions into human-readable risk factors.
+### 4. Evaluation & Honesty Layer
+* Implements multi-threshold sweeping ($0.001 \to 0.950$), probability calibration verification (Brier score: `0.0224`), dollar capture curves, cost sensitivity sweeps (\$2 $\to$ \$15), and the structured "What Didn't Work" registry.
+
+---
+
+### 5. SHAP Explainability + Gray-Zone Triage Gateway
+* **Grounded 3-Way Triage Gateway**:
+  - 🟢 **Auto-Approve (`score < 0.150`)**: **`113,756` transactions (`96.32%` of volume)** approved instantly with zero customer friction and zero reviewer delay.
+  - 🟡 **Manual Review / Gray-Zone (`0.150 <= score < 0.790`)**: **`3,434` transactions (`2.91%` of volume)** routed to the human triage queue, strictly satisfying the $\le 3.0\%$ operational capacity constraint (3,543 cases) and capturing **`1,230` true fraud cases** (precision: `35.82%`, `1.79` FP/TP).
+  - 🔴 **Auto-Block (`score >= 0.790`)**: **`918` transactions (`0.78%` of volume)** automatically blocked with verified **`90.52%` precision** (stopping **`831` high-confidence frauds**).
+  - 🛡️ **Total Fraud Capture**: **`2,061` / `4,064` fraud cases (`50.71%` gross recall)**.
+* **Opaque Feature Transparency Protocol**:
+  - Plain-language audit reasons are strictly derived from our **20 verified, engineered domain features**.
+  - Attaches an explicit **Opaque Signal Contribution metric** disclosing when decisions are heavily weighted by Vesta's undisclosed proprietary features (`V1`–`V339`) without inventing unverified semantic narratives.
 
 ---
 
@@ -112,8 +122,11 @@ Decision Threshold Sweep Spectrum:
 | **Static Per-Card Historical Mean** | *Refactored* | Static train-wide averages allowed $t=100$ transactions to reference spend behavior from $t=5000$. Refactored to expanding cumulative mean up to $t-1$. |
 | **Independent Per-Split Rolling Windows** | *Refactored* | Resetting velocity windows at the boundary caused early test transactions to register as "first-ever" events. Refactored to streaming state continuity. |
 | **Hardcoded `scale_pos_weight = 28.87`** | *Parameterized* | Multiplying positive gradients by ~29 forced trees into noisy leaf splits, degrading PR-AUC from `0.5149` to `0.4629` and Brier score from `0.0224` to `0.1118`. Parameterized as a sweep. |
-| **Unconstrained $\tau = 0.010$ Default Policy** | *Refactored* | Flat cost formula mathematical peak required reviewing 51.75% of volume (61,121 cases). Replaced with Capacity-Constrained Primary Policy ($\tau = 0.20$, $\le 3\%$ review budget). |
-| **Pure Interpretable-Only Features (20 Signals)** | *Evaluated* | Restricting to 20 engineered features dropped PR-AUC from `0.5149` to `0.2250`. Retained full GBDT with Layer 5 semantic cluster mapping bridge. |
+| **Unconstrained $\tau = 0.010$ Default Policy** | *Refactored* | Flat cost formula mathematical peak required reviewing 51.75% of volume (61,121 cases). Replaced with Capacity-Constrained Primary Policy ($\tau = 0.19$, $\le 3\%$ review budget). |
+| **Pure Interpretable-Only Features (20 Signals)** | *Evaluated* | Restricting to 20 engineered features dropped PR-AUC from `0.5149` to `0.2250`. Retained full GBDT with honest Opaque Signal Transparency in Layer 5. |
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -127,18 +140,19 @@ cd AI-Risk-Manager
 pip install -r requirements.txt
 ```
 
-### Running the End-to-End Pipeline
+### Running the End-to-End 5-Layer Pipeline
 
 1. **Place IEEE-CIS CSVs in `data/raw/`**:
    - `data/raw/train_transaction.csv`
    - `data/raw/train_identity.csv`
 
-2. **Execute Layers 1 to 4**:
+2. **Execute Full Pipeline (Layers 1 to 5)**:
    ```bash
    python3 scripts/run_layer1.py
    python3 scripts/run_layer2.py
    python3 scripts/run_layer3.py
    python3 scripts/run_layer4.py
+   python3 scripts/run_layer5.py
    ```
 
 3. **Run Automated Test Suite**:
