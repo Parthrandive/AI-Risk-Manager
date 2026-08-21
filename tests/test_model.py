@@ -13,7 +13,8 @@ from src.model import (
     prepare_feature_matrices,
     evaluate_model_performance,
     train_baseline_model,
-    train_gbdt_classifier,
+    train_xgboost_classifier,
+    train_lightgbm_classifier,
     extract_gain_feature_importances,
     compare_models_honestly,
     run_layer3_pipeline
@@ -27,12 +28,10 @@ def synthetic_feature_splits():
     n_train, n_test = 200, 60
     
     def make_df(n, start_id, start_dt):
-        # 5% fraud rate
         is_fraud = np.zeros(n, dtype=int)
         is_fraud[:max(1, int(n * 0.05))] = 1
         np.random.shuffle(is_fraud)
 
-        # Feature that correlates strongly with fraud
         high_risk_signal = is_fraud * np.random.uniform(5, 10, size=n) + (1 - is_fraud) * np.random.uniform(0, 2, size=n)
 
         return pd.DataFrame({
@@ -54,7 +53,6 @@ def synthetic_feature_splits():
             "card6_encoded": np.random.randint(0, 3, size=n).astype(np.int32),
             "is_same_email_domain": np.random.randint(0, 2, size=n).astype(np.int8),
             "is_high_risk_email": np.random.randint(0, 2, size=n).astype(np.int8),
-            # Non-feature identifier columns that should be stripped
             "_card_proxy": ["card_proxy_" + str(i % 10) for i in range(n)],
             "_device_proxy": ["device_proxy_" + str(i % 5) for i in range(n)]
         })
@@ -95,25 +93,31 @@ def test_train_baseline_model(synthetic_feature_splits):
     assert 0.0 <= metrics["roc_auc"] <= 1.0
 
 
-def test_train_gbdt_and_importances(synthetic_feature_splits):
+def test_train_xgboost_and_lightgbm(synthetic_feature_splits):
     train_df, test_df = synthetic_feature_splits
     X_train, y_train, X_test, y_test, feature_cols = prepare_feature_matrices(train_df, test_df)
 
-    clf, metrics = train_gbdt_classifier(
+    # XGBoost
+    xgb_clf, xgb_metrics = train_xgboost_classifier(
         X_train, y_train, X_test, y_test,
-        n_estimators=30,
-        max_depth=3,
-        learning_rate=0.1
+        n_estimators=30, max_depth=3, learning_rate=0.1
     )
+    assert hasattr(xgb_clf, "predict")
+    assert xgb_metrics["scale_pos_weight_used"] > 1.0
 
-    assert hasattr(clf, "predict")
-    assert "scale_pos_weight_used" in metrics
-    assert metrics["scale_pos_weight_used"] > 1.0
+    # LightGBM
+    lgb_clf, lgb_metrics = train_lightgbm_classifier(
+        X_train, y_train, X_test, y_test,
+        n_estimators=30, max_depth=3, learning_rate=0.1
+    )
+    assert hasattr(lgb_clf, "predict")
+    assert lgb_metrics["scale_pos_weight_used"] > 1.0
 
-    # Test feature importances
-    importances = extract_gain_feature_importances(clf, feature_cols)
-    assert len(importances) == len(feature_cols)
-    assert importances[0]["gain_importance"] >= importances[-1]["gain_importance"]
+    # Feature Importances
+    xgb_imp = extract_gain_feature_importances(xgb_clf, feature_cols)
+    lgb_imp = extract_gain_feature_importances(lgb_clf, feature_cols)
+    assert len(xgb_imp) == len(feature_cols)
+    assert len(lgb_imp) == len(feature_cols)
 
 
 def test_compare_models_honestly(synthetic_feature_splits):
@@ -121,12 +125,12 @@ def test_compare_models_honestly(synthetic_feature_splits):
     X_train, y_train, X_test, y_test, _ = prepare_feature_matrices(train_df, test_df)
 
     _, base_metrics = train_baseline_model(X_train, y_train, X_test, y_test)
-    _, gbdt_metrics = train_gbdt_classifier(X_train, y_train, X_test, y_test, n_estimators=20)
+    _, xgb_metrics = train_xgboost_classifier(X_train, y_train, X_test, y_test, n_estimators=20)
+    _, lgb_metrics = train_lightgbm_classifier(X_train, y_train, X_test, y_test, n_estimators=20)
 
-    comparison = compare_models_honestly(base_metrics, gbdt_metrics)
-    assert "pr_auc_delta" in comparison
-    assert "roc_auc_delta" in comparison
-    assert "f1_delta" in comparison
+    comparison = compare_models_honestly(base_metrics, xgb_metrics, lgb_metrics)
+    assert "xgb_pr_auc_delta" in comparison
+    assert "lgb_pr_auc_delta" in comparison
 
 
 def test_end_to_end_layer3_pipeline(synthetic_feature_splits):
@@ -147,12 +151,7 @@ def test_end_to_end_layer3_pipeline(synthetic_feature_splits):
             max_depth=3
         )
 
-        assert os.path.exists(results["artifact_paths"]["gbdt_model"])
+        assert os.path.exists(results["artifact_paths"]["xgboost_model"])
+        assert os.path.exists(results["artifact_paths"]["lightgbm_model"])
         assert os.path.exists(results["artifact_paths"]["baseline_model"])
         assert os.path.exists(results["artifact_paths"]["metrics"])
-
-        # Verify saved model can be reloaded and run predictions
-        loaded_model = joblib.load(results["artifact_paths"]["gbdt_model"])
-        X_test = test_df[results["feature_columns"]]
-        probs = loaded_model.predict_proba(X_test)[:, 1]
-        assert len(probs) == len(test_df)

@@ -15,7 +15,7 @@ from src.model import run_layer3_pipeline
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Layer 3: Train baseline model and XGBoost GBDT classifier on held-out test split."
+        description="Layer 3: Train baseline, XGBoost, and LightGBM models on held-out test split."
     )
     parser.add_argument(
         "--train-features",
@@ -39,19 +39,19 @@ def main():
         "--n-estimators",
         type=int,
         default=150,
-        help="Number of trees for XGBoost"
+        help="Number of trees for GBDT"
     )
     parser.add_argument(
         "--max-depth",
         type=int,
         default=6,
-        help="Max tree depth for XGBoost"
+        help="Max tree depth for GBDT"
     )
     parser.add_argument(
         "--learning-rate",
         type=float,
         default=0.05,
-        help="Learning rate for XGBoost"
+        help="Learning rate for GBDT"
     )
 
     args = parser.parse_args()
@@ -73,36 +73,37 @@ def main():
         )
 
         base_m = results["baseline_metrics"]
-        gbdt_m = results["gbdt_metrics"]
-        comp = results["comparison"]
+        xgb_m = results["xgboost_metrics"]
+        lgb_m = results["lightgbm_metrics"]
 
-        print("\n" + "=" * 68)
-        print("🚀 LAYER 3: MODEL TRAINING & BASELINE COMPARISON SUMMARY")
-        print("=" * 68)
+        print("\n" + "=" * 80)
+        print("🚀 LAYER 3: MODEL BENCHMARKING & COMPARISON SUMMARY")
+        print("=" * 80)
         print(f"• Evaluated Features:  {results['feature_count']}")
-        print(f"• Scale Pos Weight:    {gbdt_m.get('scale_pos_weight_used', 1.0):.2f}")
+        print(f"• Scale Pos Weight:    {xgb_m.get('scale_pos_weight_used', 1.0):.2f}")
         
-        print("\n📊 TEST SET PERFORMANCE COMPARISON:")
-        print(f"{'Metric':<20} | {'Baseline (LogReg)':<18} | {'XGBoost GBDT':<18} | {'Delta':<10}")
-        print("-" * 68)
-        print(f"{'PR-AUC (Primary)':<20} | {base_m['pr_auc']:<18.4f} | {gbdt_m['pr_auc']:<18.4f} | {comp['pr_auc_delta']:<+10.4f}")
-        print(f"{'ROC-AUC':<20} | {base_m['roc_auc']:<18.4f} | {gbdt_m['roc_auc']:<18.4f} | {comp['roc_auc_delta']:<+10.4f}")
-        print(f"{'Precision (at 0.5)':<20} | {base_m['precision']:<18.4f} | {gbdt_m['precision']:<18.4f} | {gbdt_m['precision'] - base_m['precision']:<+10.4f}")
-        print(f"{'Recall (at 0.5)':<20} | {base_m['recall']:<18.4f} | {gbdt_m['recall']:<18.4f} | {gbdt_m['recall'] - base_m['recall']:<+10.4f}")
-        print(f"{'F1 Score':<20} | {base_m['f1_score']:<18.4f} | {gbdt_m['f1_score']:<18.4f} | {comp['f1_delta']:<+10.4f}")
-        print("-" * 68)
-        print(f"ℹ️  Note: Default 0.5 decision threshold is shifted due to scale_pos_weight.")
-        print(f"   Precision/Recall trade-off will be calibrated across full threshold sweep in Layer 4.")
+        print("\n📊 HELD-OUT TEST SET BENCHMARK RESULTS:")
+        print(f"{'Metric':<22} | {'Baseline (LogReg)':<18} | {'XGBoost GBDT':<18} | {'LightGBM GBDT':<18}")
+        print("-" * 80)
+        print(f"{'PR-AUC (Primary)':<22} | {base_m['pr_auc']:<18.4f} | {xgb_m['pr_auc']:<18.4f} | {lgb_m['pr_auc']:<18.4f}")
+        print(f"{'ROC-AUC':<22} | {base_m['roc_auc']:<18.4f} | {xgb_m['roc_auc']:<18.4f} | {lgb_m['roc_auc']:<18.4f}")
+        print(f"{'Precision (at 0.5)':<22} | {base_m['precision']:<18.4f} | {xgb_m['precision']:<18.4f} | {lgb_m['precision']:<18.4f}")
+        print(f"{'Recall (at 0.5)':<22} | {base_m['recall']:<18.4f} | {xgb_m['recall']:<18.4f} | {lgb_m['recall']:<18.4f}")
+        print(f"{'F1 Score':<22} | {base_m['f1_score']:<18.4f} | {xgb_m['f1_score']:<18.4f} | {lgb_m['f1_score']:<18.4f}")
+        print("-" * 80)
+        print(f"ℹ️  Note on Precision/Recall: Default 0.5 cutoff is shifted due to scale_pos_weight.")
+        print(f"   The calibrated threshold sweep & false-positive cost analysis follow in Layer 4.")
 
-        print("\n🔍 TOP 5 FEATURES BY GAIN IMPORTANCE:")
+        print("\n🔍 TOP 5 FEATURES BY GAIN IMPORTANCE (XGBoost):")
         for rank, item in enumerate(results["top_features_by_gain"][:5], 1):
             print(f"  {rank}. {item['feature']:<35} (Gain: {item['gain_importance']:.2f})")
 
         print("\n📁 GENERATED ARTIFACTS:")
-        print(f"• GBDT Model:      {results['artifact_paths']['gbdt_model']}")
+        print(f"• XGBoost Model:   {results['artifact_paths']['xgboost_model']}")
+        print(f"• LightGBM Model:  {results['artifact_paths']['lightgbm_model']}")
         print(f"• Baseline Model:  {results['artifact_paths']['baseline_model']}")
         print(f"• Metrics Record:  {results['artifact_paths']['metrics']}")
-        print("=" * 68 + "\n")
+        print("=" * 80 + "\n")
 
     except Exception as e:
         print(f"\n❌ Pipeline failed: {e}")

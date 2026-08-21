@@ -19,6 +19,7 @@ from sklearn.metrics import (
     confusion_matrix
 )
 import xgboost as xgb
+import lightgbm as lgb
 
 # Configure logging
 logging.basicConfig(
@@ -48,13 +49,11 @@ def prepare_feature_matrices(
     if exclude_cols:
         default_excludes.update(exclude_cols)
 
-    # Candidate feature columns: numeric dtypes excluding identifiers
     feature_cols = [
         col for col in train_df.columns
         if col not in default_excludes and pd.api.types.is_numeric_dtype(train_df[col].dtype)
     ]
 
-    # Ensure test_df has identical feature columns
     for c in feature_cols:
         if c not in test_df.columns:
             raise KeyError(f"Feature column '{c}' missing from test set.")
@@ -84,7 +83,6 @@ def evaluate_model_performance(
     rec = float(recall_score(y_true, y_pred, zero_division=0))
     f1 = float(f1_score(y_true, y_pred, zero_division=0))
     
-    # Check if more than one class is present in true labels for AUC
     if len(np.unique(y_true)) > 1:
         roc_auc = float(roc_auc_score(y_true, y_prob))
         pr_auc = float(average_precision_score(y_true, y_prob))
@@ -123,8 +121,8 @@ def train_baseline_model(
     y_test: pd.Series
 ) -> Tuple[Pipeline, Dict[str, Any]]:
     """
-    Trains a simple Logistic Regression baseline with median imputation and standard scaling.
-    Evaluates on test split to establish the true performance floor before training GBDT.
+    Trains a Logistic Regression baseline with median imputation and standard scaling.
+    Evaluates on test split to establish the true precision/recall floor.
     """
     logger.info("--- Training Step 1: Baseline Logistic Regression ---")
     
@@ -143,7 +141,7 @@ def train_baseline_model(
     return baseline_pipe, metrics
 
 
-def train_gbdt_classifier(
+def train_xgboost_classifier(
     X_train: pd.DataFrame,
     y_train: pd.Series,
     X_test: pd.DataFrame,
@@ -155,19 +153,14 @@ def train_gbdt_classifier(
     random_state: int = 42
 ) -> Tuple[xgb.XGBClassifier, Dict[str, Any]]:
     """
-    Trains an XGBoost gradient-boosted decision tree classifier with scale_pos_weight
-    to handle the ~3.5% positive fraud class imbalance.
+    Trains an XGBoost gradient-boosted decision tree classifier with scale_pos_weight.
     """
     logger.info("--- Training Step 2: XGBoost Gradient-Boosted Classifier ---")
 
-    # Compute scale_pos_weight if not provided: (negative_count / positive_count)
     pos_count = int(y_train.sum())
     neg_count = int(len(y_train) - pos_count)
     if scale_pos_weight is None:
         scale_pos_weight = float(neg_count / pos_count) if pos_count > 0 else 1.0
-
-    logger.info(f"Class distribution: {neg_count:,} legit vs {pos_count:,} fraud.")
-    logger.info(f"Using scale_pos_weight = {scale_pos_weight:.2f}")
 
     clf = xgb.XGBClassifier(
         n_estimators=n_estimators,
@@ -183,7 +176,6 @@ def train_gbdt_classifier(
 
     clf.fit(X_train, y_train)
 
-    # Score on held-out test split
     y_pred = clf.predict(X_test)
     y_prob = clf.predict_proba(X_test)[:, 1]
 
@@ -192,56 +184,114 @@ def train_gbdt_classifier(
     return clf, metrics
 
 
+def train_lightgbm_classifier(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    n_estimators: int = 150,
+    max_depth: int = 6,
+    learning_rate: float = 0.05,
+    scale_pos_weight: Optional[float] = None,
+    random_state: int = 42
+) -> Tuple[lgb.LGBMClassifier, Dict[str, Any]]:
+    """
+    Trains a LightGBM gradient-boosted classifier with scale_pos_weight / is_unbalance.
+    """
+    logger.info("--- Training Step 3: LightGBM Gradient-Boosted Classifier ---")
+
+    pos_count = int(y_train.sum())
+    neg_count = int(len(y_train) - pos_count)
+    if scale_pos_weight is None:
+        scale_pos_weight = float(neg_count / pos_count) if pos_count > 0 else 1.0
+
+    clf = lgb.LGBMClassifier(
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        learning_rate=learning_rate,
+        scale_pos_weight=scale_pos_weight,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=random_state,
+        verbosity=-1
+    )
+
+    clf.fit(X_train, y_train)
+
+    y_pred = clf.predict(X_test)
+    y_prob = clf.predict_proba(X_test)[:, 1]
+
+    metrics = evaluate_model_performance(y_test, y_pred, y_prob, model_name="LightGBM Classifier")
+    metrics["scale_pos_weight_used"] = scale_pos_weight
+    return clf, metrics
+
+
 def extract_gain_feature_importances(
-    model: xgb.XGBClassifier,
+    model: Any,
     feature_names: List[str]
 ) -> List[Dict[str, Any]]:
     """
-    Extracts gain-based feature importances from trained XGBoost model.
-    Gain measures the relative contribution of each feature to the model's tree splits.
+    Extracts gain-based feature importances from trained XGBoost or LightGBM model.
     """
-    booster = model.get_booster()
-    # Get importance dictionary by gain
-    score_gain = booster.get_score(importance_type="gain")
-    
-    # Map feature names (booster may use f0, f1 or actual names depending on input)
-    importances = []
-    for i, col in enumerate(feature_names):
-        # Check both column name and 'f{i}' index
-        gain_val = score_gain.get(col, score_gain.get(f"f{i}", 0.0))
-        importances.append({
-            "feature": col,
-            "gain_importance": float(gain_val)
-        })
+    if isinstance(model, xgb.XGBClassifier):
+        booster = model.get_booster()
+        score_gain = booster.get_score(importance_type="gain")
+        importances = []
+        for i, col in enumerate(feature_names):
+            gain_val = score_gain.get(col, score_gain.get(f"f{i}", 0.0))
+            importances.append({"feature": col, "gain_importance": float(gain_val)})
+    elif isinstance(model, lgb.LGBMClassifier):
+        raw_importances = model.booster_.feature_importance(importance_type="gain")
+        importances = [
+            {"feature": col, "gain_importance": float(gain_val)}
+            for col, gain_val in zip(feature_names, raw_importances)
+        ]
+    else:
+        importances = [{"feature": col, "gain_importance": 0.0} for col in feature_names]
 
-    # Sort descending by gain
     importances.sort(key=lambda x: x["gain_importance"], reverse=True)
     return importances
 
 
 def compare_models_honestly(
     baseline_metrics: Dict[str, Any],
-    gbdt_metrics: Dict[str, Any]
+    xgb_metrics: Dict[str, Any],
+    lgb_metrics: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Directly compares GBDT against baseline metrics and documents relative deltas.
+    Directly compares GBDT models against baseline metrics.
     """
     comparison = {
         "baseline_pr_auc": baseline_metrics["pr_auc"],
-        "gbdt_pr_auc": gbdt_metrics["pr_auc"],
-        "pr_auc_delta": gbdt_metrics["pr_auc"] - baseline_metrics["pr_auc"],
+        "xgb_pr_auc": xgb_metrics["pr_auc"],
+        "xgb_pr_auc_delta": xgb_metrics["pr_auc"] - baseline_metrics["pr_auc"],
         "baseline_f1": baseline_metrics["f1_score"],
-        "gbdt_f1": gbdt_metrics["f1_score"],
-        "f1_delta": gbdt_metrics["f1_score"] - baseline_metrics["f1_score"],
+        "xgb_f1": xgb_metrics["f1_score"],
+        "xgb_f1_delta": xgb_metrics["f1_score"] - baseline_metrics["f1_score"],
         "baseline_roc_auc": baseline_metrics["roc_auc"],
-        "gbdt_roc_auc": gbdt_metrics["roc_auc"],
-        "roc_auc_delta": gbdt_metrics["roc_auc"] - baseline_metrics["roc_auc"],
-        "summary": (
-            f"XGBoost PR-AUC: {gbdt_metrics['pr_auc']:.4f} vs Baseline: {baseline_metrics['pr_auc']:.4f} "
-            f"(Delta: {gbdt_metrics['pr_auc'] - baseline_metrics['pr_auc']:+.4f})"
-        )
+        "xgb_roc_auc": xgb_metrics["roc_auc"],
+        "xgb_roc_auc_delta": xgb_metrics["roc_auc"] - baseline_metrics["roc_auc"]
     }
-    logger.info(f"Model Comparison: {comparison['summary']}")
+
+    if lgb_metrics:
+        comparison.update({
+            "lgb_pr_auc": lgb_metrics["pr_auc"],
+            "lgb_pr_auc_delta": lgb_metrics["pr_auc"] - baseline_metrics["pr_auc"],
+            "lgb_f1": lgb_metrics["f1_score"],
+            "lgb_f1_delta": lgb_metrics["f1_score"] - baseline_metrics["f1_score"],
+            "lgb_roc_auc": lgb_metrics["roc_auc"],
+            "lgb_roc_auc_delta": lgb_metrics["roc_auc"] - baseline_metrics["roc_auc"]
+        })
+
+    summary = (
+        f"PR-AUC -> Baseline: {baseline_metrics['pr_auc']:.4f} | "
+        f"XGBoost: {xgb_metrics['pr_auc']:.4f} ({xgb_metrics['pr_auc'] - baseline_metrics['pr_auc']:+.4f})"
+    )
+    if lgb_metrics:
+        summary += f" | LightGBM: {lgb_metrics['pr_auc']:.4f} ({lgb_metrics['pr_auc'] - baseline_metrics['pr_auc']:+.4f})"
+
+    comparison["summary"] = summary
+    logger.info(f"Model Comparison: {summary}")
     return comparison
 
 
@@ -256,12 +306,12 @@ def run_layer3_pipeline(
     """
     Orchestrates Layer 3:
     1. Loads Layer 2 feature matrices.
-    2. Separates X and y, dropping IDs and proxy markers.
-    3. Trains Baseline model and evaluates precision/recall/PR-AUC.
-    4. Trains XGBoost with scale_pos_weight.
-    5. Evaluates and compares GBDT vs Baseline.
-    6. Extracts gain-based feature importances.
-    7. Persists trained models and metrics JSON.
+    2. Trains Baseline (Logistic Regression).
+    3. Trains XGBoost (with scale_pos_weight).
+    4. Trains LightGBM (with scale_pos_weight).
+    5. Evaluates and compares all three models.
+    6. Extracts gain feature importances.
+    7. Persists models and metrics JSON.
     """
     if not os.path.exists(train_features_path) or not os.path.exists(test_features_path):
         raise FileNotFoundError(
@@ -271,9 +321,7 @@ def run_layer3_pipeline(
 
     logger.info("=== Starting Layer 3: Classifier Training & Baseline Comparison Pipeline ===")
     
-    logger.info(f"Loading {train_features_path}...")
     train_df = pd.read_parquet(train_features_path)
-    logger.info(f"Loading {test_features_path}...")
     test_df = pd.read_parquet(test_features_path)
 
     # 1. Prepare X and y
@@ -282,47 +330,48 @@ def run_layer3_pipeline(
     # 2. Train Baseline
     baseline_model, baseline_metrics = train_baseline_model(X_train, y_train, X_test, y_test)
 
-    # 3. Train GBDT Classifier
-    gbdt_model, gbdt_metrics = train_gbdt_classifier(
-        X_train,
-        y_train,
-        X_test,
-        y_test,
-        n_estimators=n_estimators,
-        max_depth=max_depth,
-        learning_rate=learning_rate
+    # 3. Train XGBoost
+    xgb_model, xgb_metrics = train_xgboost_classifier(
+        X_train, y_train, X_test, y_test,
+        n_estimators=n_estimators, max_depth=max_depth, learning_rate=learning_rate
     )
 
-    # 4. Compare models
-    comparison = compare_models_honestly(baseline_metrics, gbdt_metrics)
+    # 4. Train LightGBM
+    lgb_model, lgb_metrics = train_lightgbm_classifier(
+        X_train, y_train, X_test, y_test,
+        n_estimators=n_estimators, max_depth=max_depth, learning_rate=learning_rate
+    )
 
-    # 5. Extract Feature Importances
-    feature_importances = extract_gain_feature_importances(gbdt_model, feature_cols)
+    # 5. Compare models
+    comparison = compare_models_honestly(baseline_metrics, xgb_metrics, lgb_metrics)
+
+    # 6. Extract Feature Importances (XGBoost)
+    feature_importances = extract_gain_feature_importances(xgb_model, feature_cols)
     top_10_features = feature_importances[:10]
-    logger.info(f"Top 10 Gain Features: {[f['feature'] for f in top_10_features]}")
 
-    # 6. Save Model Artifacts
+    # 7. Save Model Artifacts
     os.makedirs(output_dir, exist_ok=True)
-    gbdt_path = os.path.join(output_dir, "fraud_detector_gbdt.joblib")
+    xgb_path = os.path.join(output_dir, "fraud_detector_gbdt.joblib")
+    lgb_path = os.path.join(output_dir, "fraud_detector_lgbm.joblib")
     baseline_path = os.path.join(output_dir, "baseline_model.joblib")
     metrics_path = os.path.join(output_dir, "model_metrics.json")
 
-    logger.info(f"Saving GBDT model to {gbdt_path}...")
-    joblib.dump(gbdt_model, gbdt_path)
-
-    logger.info(f"Saving Baseline model to {baseline_path}...")
+    joblib.dump(xgb_model, xgb_path)
+    joblib.dump(lgb_model, lgb_path)
     joblib.dump(baseline_model, baseline_path)
 
     output_metadata = {
         "feature_count": len(feature_cols),
         "feature_columns": feature_cols,
         "baseline_metrics": baseline_metrics,
-        "gbdt_metrics": gbdt_metrics,
+        "xgboost_metrics": xgb_metrics,
+        "lightgbm_metrics": lgb_metrics,
         "comparison": comparison,
         "top_features_by_gain": top_10_features,
         "all_feature_importances": feature_importances,
         "artifact_paths": {
-            "gbdt_model": gbdt_path,
+            "xgboost_model": xgb_path,
+            "lightgbm_model": lgb_path,
             "baseline_model": baseline_path,
             "metrics": metrics_path
         }
@@ -331,6 +380,5 @@ def run_layer3_pipeline(
     with open(metrics_path, "w") as f:
         json.dump(output_metadata, f, indent=2)
 
-    logger.info(f"Saved model metrics and comparison to {metrics_path}.")
     logger.info("=== Layer 3 Complete: Models and metrics saved to %s ===", output_dir)
     return output_metadata
