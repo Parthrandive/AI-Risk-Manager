@@ -26,9 +26,13 @@ def synthetic_splits():
         "isFraud": np.random.choice([0, 1], size=n_train, p=[0.9, 0.1]),
         "ProductCD": np.random.choice(["W", "C", "H", np.nan], size=n_train),
         "card1": np.random.choice([1001, 1002, 1003], size=n_train),
+        "card2": 150,
+        "card3": 150,
         "card4": np.random.choice(["visa", "mastercard"], size=n_train),
+        "card5": 100,
         "card6": np.random.choice(["credit", "debit"], size=n_train),
         "addr1": np.random.choice([100, 200], size=n_train),
+        "addr2": 87,
         "P_emaildomain": np.random.choice(["gmail.com", "yahoo.com", "protonmail.com"], size=n_train),
         "R_emaildomain": np.random.choice(["gmail.com", "yahoo.com"], size=n_train),
         "DeviceType": np.random.choice(["desktop", "mobile", np.nan], size=n_train),
@@ -36,18 +40,21 @@ def synthetic_splits():
     })
 
     # Test data: timestamps 5100 to 10000 (strictly after train)
-    # Includes a new/unseen ProductCD 'R' and card4 'discover'
     t_test = np.sort(np.random.choice(np.arange(5100, 10000), size=n_test, replace=False))
     test_df = pd.DataFrame({
         "TransactionID": np.arange(2000, 2000 + n_test),
         "TransactionDT": t_test,
         "TransactionAmt": np.random.uniform(10, 300, size=n_test).astype(np.float32),
         "isFraud": np.random.choice([0, 1], size=n_test, p=[0.9, 0.1]),
-        "ProductCD": np.random.choice(["W", "R", np.nan], size=n_test), # 'R' is unseen in train
-        "card1": np.random.choice([1001, 9999], size=n_test),           # 9999 unseen in train
-        "card4": np.random.choice(["visa", "discover"], size=n_test),    # 'discover' unseen
+        "ProductCD": np.random.choice(["W", "R", np.nan], size=n_test), # 'R' unseen
+        "card1": np.random.choice([1001, 9999], size=n_test),
+        "card2": 150,
+        "card3": 150,
+        "card4": np.random.choice(["visa", "discover"], size=n_test),
+        "card5": 100,
         "card6": np.random.choice(["credit", "debit"], size=n_test),
         "addr1": np.random.choice([100, 300], size=n_test),
+        "addr2": 87,
         "P_emaildomain": np.random.choice(["gmail.com", "anonymous.com"], size=n_test),
         "R_emaildomain": np.random.choice(["gmail.com", "yahoo.com"], size=n_test),
         "DeviceType": np.random.choice(["desktop", "mobile", np.nan], size=n_test),
@@ -65,7 +72,6 @@ def test_fit_on_train_only(synthetic_splits):
     pipeline.fit(train_df)
     assert pipeline.is_fitted
     assert "ProductCD" in pipeline.category_mappings
-    # Unseen code is 1, Missing is 0
     assert pipeline.category_mappings["ProductCD"]["MISSING"] == 0
     assert pipeline.category_mappings["ProductCD"]["UNSEEN"] == 1
 
@@ -74,45 +80,86 @@ def test_transform_handles_unseen_and_missing(synthetic_splits):
     train_df, test_df = synthetic_splits
     pipeline = RiskFeaturePipeline().fit(train_df)
 
-    transformed_train = pipeline.transform(train_df)
-    transformed_test = pipeline.transform(test_df)
+    transformed_train, transformed_test = pipeline.transform_splits(train_df, test_df)
 
-    # Check encoded column exists
     assert "ProductCD_encoded" in transformed_train.columns
     assert "ProductCD_encoded" in transformed_test.columns
 
-    # Test set contains unseen category 'R' which must be mapped to 1 (UNSEEN)
     r_rows = test_df[test_df["ProductCD"] == "R"].index
     if len(r_rows) > 0:
         assert (transformed_test.loc[r_rows, "ProductCD_encoded"] == 1).all()
 
 
-def test_forward_velocities(synthetic_splits):
-    train_df, _ = synthetic_splits
+def test_expanding_card_mean_no_future_leakage():
+    """Verifies that amt_to_expanding_card_mean_ratio uses strictly historical mean."""
+    pipeline = RiskFeaturePipeline()
+    # 3 sequential transactions for identical card: amounts 100, 200, 300
+    df = pd.DataFrame({
+        "TransactionID": [1, 2, 3],
+        "TransactionDT": [100, 200, 300],
+        "TransactionAmt": [100.0, 200.0, 300.0],
+        "card1": [1000, 1000, 1000],
+        "card2": [1, 1, 1],
+        "card3": [1, 1, 1],
+        "card4": ["visa", "visa", "visa"],
+        "card5": [1, 1, 1],
+        "card6": ["credit", "credit", "credit"],
+        "addr1": [10, 10, 10],
+        "addr2": [10, 10, 10]
+    })
+    pipeline.fit(df)
+    transformed = pipeline.transform(df)
+
+    # Txn 1: first seen, uses initial fallback
+    # Txn 2: historical mean = 100.0 -> ratio = 200 / 100 = 2.0
+    # Txn 3: historical mean = (100+200)/2 = 150.0 -> ratio = 300 / 150 = 2.0
+    ratios = transformed["amt_to_expanding_card_mean_ratio"].values
+    assert np.isclose(ratios[1], 2.0)
+    assert np.isclose(ratios[2], 2.0)
+
+
+def test_state_continuity_across_split_boundary():
+    """Verifies that test split retains velocity context from the end of train (no cold start)."""
+    # Card 9999 has a transaction in train at t=4900
+    train_df = pd.DataFrame({
+        "TransactionID": [101],
+        "TransactionDT": [4900],
+        "TransactionAmt": [100.0],
+        "card1": [9999],
+        "card2": [1],
+        "card3": [1],
+        "card4": ["visa"],
+        "card5": [1],
+        "card6": ["credit"],
+        "addr1": [10],
+        "addr2": [10]
+    })
+
+    # Card 9999 has another transaction in test at t=5100 (200s later, within 10m window)
+    test_df = pd.DataFrame({
+        "TransactionID": [201],
+        "TransactionDT": [5100],
+        "TransactionAmt": [150.0],
+        "card1": [9999],
+        "card2": [1],
+        "card3": [1],
+        "card4": ["visa"],
+        "card5": [1],
+        "card6": ["credit"],
+        "addr1": [10],
+        "addr2": [10]
+    })
+
     pipeline = RiskFeaturePipeline().fit(train_df)
-    transformed = pipeline.transform(train_df)
+    train_feat, test_feat = pipeline.transform_splits(train_df, test_df)
 
-    # Check velocity columns
-    assert "time_since_last_txn_card" in transformed.columns
-    assert "card_txn_count_10m" in transformed.columns
-    assert "card_txn_count_1h" in transformed.columns
-    assert "card_txn_count_24h" in transformed.columns
-
-    # Velocity counts must be >= 0
-    assert (transformed["card_txn_count_10m"] >= 0).all()
-    assert (transformed["card_txn_count_1h"] >= transformed["card_txn_count_10m"]).all()
-    assert (transformed["card_txn_count_24h"] >= transformed["card_txn_count_1h"]).all()
-
-
-def test_amount_features(synthetic_splits):
-    train_df, _ = synthetic_splits
-    pipeline = RiskFeaturePipeline().fit(train_df)
-    transformed = pipeline.transform(train_df)
-
-    assert "TransactionAmt_log" in transformed.columns
-    assert "TransactionAmt_decimal" in transformed.columns
-    assert "amt_to_card_mean_ratio" in transformed.columns
-    assert (transformed["amt_to_card_mean_ratio"] > 0).all()
+    # In test set:
+    # 1. Recency should be 5100 - 4900 = 200s (NOT -1)
+    assert test_feat.loc[0, "time_since_last_txn_card"] == 200.0
+    # 2. 10m velocity should be 1 (NOT 0)
+    assert test_feat.loc[0, "card_txn_count_10m"] == 1
+    # 3. Expanding card mean ratio should be 150 / 100 = 1.5
+    assert np.isclose(test_feat.loc[0, "amt_to_expanding_card_mean_ratio"], 1.5)
 
 
 def test_run_layer2_pipeline_end_to_end(synthetic_splits):
@@ -135,6 +182,5 @@ def test_run_layer2_pipeline_end_to_end(synthetic_splits):
         assert os.path.exists(metadata["artifact_paths"]["test_features"])
         assert os.path.exists(metadata["artifact_paths"]["pipeline"])
 
-        # Check deserialization of fitted pipeline
         loaded_pipeline = joblib.load(metadata["artifact_paths"]["pipeline"])
         assert loaded_pipeline.is_fitted

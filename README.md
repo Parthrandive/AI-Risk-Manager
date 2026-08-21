@@ -18,7 +18,7 @@ Incoming transaction
 [1] Data & Chronological Split
         │
         ▼
-[2] Feature Engineering
+[2] Feature Engineering (Continuous State & Expanding Means)
         │
         ▼
 [3] Gradient-Boosted Classifier (XGBoost / LightGBM)
@@ -40,25 +40,26 @@ Approve   Review      Block
 ## 🏗️ Deep-Dive into Pipeline Layers
 
 ### 1. Data & Chronological Split
-* **What it does**: Ingests `train_transaction.csv` and `train_identity.csv`, merges on `TransactionID`, sorts chronologically by `TransactionDT`, and performs a time-quantile split into train and test sets (never random shuffling).
+* **What it does**: Ingests `train_transaction.csv` and `train_identity.csv`, merges on `TransactionID`, runs data sanity checks, downcasts memory, sorts chronologically by `TransactionDT`, and performs a time-quantile split into train and test sets (never random shuffling).
 * **Execution details**:
-  - Sorts all rows by `TransactionDT` in ascending order.
-  - Places a split boundary at a selected percentile (default: 80th percentile).
-  - Assigns rows on or before the boundary to training; rows after to test.
-  - Evaluates and reports fraud rate (class imbalance) independently for train and test sets.
-  - Leakage verification: guarantees 0% `TransactionID` overlap and strict temporal boundaries (no training rows past the boundary, no test rows before it).
-* **Rationale**: Eliminates lookahead bias where future data informs past predictions—ensuring the model reflects a live production checkout flow.
+  - **Sanity Checks**: Drops exact duplicate rows; verifies `TransactionID` uniqueness; ensures non-negative `TransactionAmt`; checks `TransactionDT` monotonic safety; verifies `isFraud` is strictly binary $\{0, 1\}$.
+  - **Memory Downcasting**: Converts `float64` $\to$ `float32` and `int64` $\to$ `int32`/`int16`/`int8` to ensure lightweight, fast tabular operations.
+  - **Temporal Splitting**: Sorts by `TransactionDT` ascending; sets boundary at the 80th percentile; trains on $\le$ boundary, tests on $>$ boundary.
+  - **Imbalance & Drift Reporting**: Evaluates and reports class imbalance (`isFraud.mean()`) and temporal drift between train and test splits.
+  - **Zero Leakage Verification**: Guarantees 0% `TransactionID` overlap and strict temporal boundaries.
 
 ---
 
-### 2. Feature Engineering
-* **What it does**: Constructs a compact, interpretable set of behavioral and transactional features rather than relying blindly on the raw 300+ anonymized `V1`–`V339` columns.
-* **Key Features**:
-  - Transaction amount & relative distribution.
-  - Recency: Time-since-last-transaction per card/device.
-  - Merchant Category Code (MCC) interactions.
-  - Rolling Velocity Counts: Transaction frequency across short and medium temporal windows (e.g., last 10 minutes, last 24 hours per card/device).
-* **Rationale**: All velocity and rolling features are computed in strict `TransactionDT` chronological order over time-split data without resetting per-slice or referencing future states. High interpretability ensures human operators and evaluators can validate risk rationale.
+### 2. Feature Engineering & Preprocessing Engine
+* **What it does**: Constructs a compact, interpretable set of behavioral, velocity, and recency features without lookahead leakage or boundary cold-start artifacts.
+* **Core Identity Proxies**:
+  - **Card Proxy**: Formed by combining `card1 + card2 + card3 + card4 + card5 + card6 + addr1 + addr2` to create an interpretable account/card fingerprint.
+  - **Device Proxy**: Formed by combining `DeviceType + DeviceInfo + id_30 + id_31`.
+    > *Note*: `DeviceInfo` is heavily missing (~70–80% null) in IEEE-CIS. When missing or first seen, `time_since_last_txn_device` defaults to `-1.0`, capturing anonymous/unlinked device behavior as an informative signal.
+* **Leakage-Free Policies & Techniques**:
+  - **Fit-on-Train Categorical Vocabulary**: Encodings (`ProductCD`, `card4`, `card6`, `P_emaildomain`, etc.) are learned from `train.parquet` only (`0: MISSING`, `1: UNSEEN` for novel test categories, `2+: Train categories`).
+  - **Expanding Card Mean (Zero Intra-Split Leakage)**: `amt_to_expanding_card_mean_ratio` computes the ratio of the transaction amount against the *cumulative historical average of that card up to timestamp $t-1$*. Early transactions never reference future amounts from later in the dataset.
+  - **Continuous State Across Boundary (Zero Cold-Start Artifacts)**: Velocity (10m, 1h, 24h) and recency state are computed in forward streaming succession across the train/test boundary. Transactions immediately after the split boundary retain full 24-hour historical context.
 
 ---
 
@@ -114,12 +115,29 @@ Architectural options like GNN abuse-ring detectors (GraphSAGE), heavy graph sto
 ```bash
 git clone git@github.com:Parthrandive/AI-Risk-Manager.git
 cd AI-Risk-Manager
+pip install -r requirements.txt
 ```
 
-### Dataset Setup
-Download the IEEE-CIS Fraud Detection dataset files into `data/`:
-- `train_transaction.csv`
-- `train_identity.csv`
+### Running the Pipeline
+
+1. **Place Raw Data in `data/raw/`**:
+   - `data/raw/train_transaction.csv`
+   - `data/raw/train_identity.csv`
+
+2. **Execute Layer 1 (Data & Chronological Split)**:
+   ```bash
+   python3 scripts/run_layer1.py
+   ```
+
+3. **Execute Layer 2 (Feature Engineering & Preprocessing)**:
+   ```bash
+   python3 scripts/run_layer2.py
+   ```
+
+4. **Run Verification Test Suite**:
+   ```bash
+   python3 -m pytest
+   ```
 
 ---
 
