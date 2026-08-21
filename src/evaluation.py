@@ -157,21 +157,88 @@ def compute_operational_cost_curve(
     fraud_chargeback_multiplier: float = 1.5
 ) -> pd.DataFrame:
     """
-    Computes financial net utility across decision thresholds.
-    Utility = (Fraud Amount Caught * Multiplier) - (FP Manual Review Costs) - (Missed Fraud Losses * Multiplier).
+    Computes financial net utility across decision thresholds based on explicit cost assumptions:
+    - Assumed Manual Review Cost: $5.00 per flagged transaction (industry baseline for ~3-5 min analyst triage).
+    - Assumed Chargeback Multiplier: 1.5x of transaction dollar amount (recovers goods loss + merchant fee penalties).
     """
     df = sweep_df.copy()
     
     if "caught_fraud_amount" in df.columns and "false_positives" in df.columns:
-        df["manual_review_cost"] = df["false_positives"] * cost_per_manual_review
-        df["fraud_loss_prevented"] = df["caught_fraud_amount"] * fraud_chargeback_multiplier
-        df["missed_fraud_loss"] = df["missed_fraud_amount"] * fraud_chargeback_multiplier
+        df["manual_review_cost"] = (df["false_positives"] * cost_per_manual_review).round(2)
+        df["fraud_loss_prevented"] = (df["caught_fraud_amount"] * fraud_chargeback_multiplier).round(2)
+        df["missed_fraud_loss"] = (df["missed_fraud_amount"] * fraud_chargeback_multiplier).round(2)
         
         df["net_financial_benefit"] = (
             df["fraud_loss_prevented"] - df["manual_review_cost"] - df["missed_fraud_loss"]
         ).round(2)
         
     return df
+
+
+def synthesize_operational_policies(sweep_df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+    """
+    Synthesizes the full threshold sweep into 3 actionable named operating policies:
+    1. Conservative Policy (Minimize false blocks & checkout friction)
+    2. Balanced Policy (Maximize net financial benefit / F1 balance)
+    3. Aggressive Policy (Maximize fraud recall / catch rate for risk surges)
+    """
+    df = sweep_df.copy()
+
+    # 1. Balanced Policy: Maximizes F1 (or Net Financial Benefit if available)
+    if "net_financial_benefit" in df.columns and df["net_financial_benefit"].max() > 0:
+        best_balanced_idx = df["net_financial_benefit"].idxmax()
+    else:
+        best_balanced_idx = df["f1_score"].idxmax()
+    balanced_row = df.loc[best_balanced_idx].to_dict()
+
+    # 2. Conservative Policy: Precision >= 0.50 or lowest FP/TP ratio with >= 20% recall
+    valid_cons = df[df["recall"] >= 0.20]
+    if not valid_cons.empty:
+        best_cons_idx = valid_cons["flags_per_true_fraud"].replace(-1, 999).idxmin()
+        cons_row = df.loc[best_cons_idx].to_dict()
+    else:
+        cons_row = df.iloc[-3].to_dict()
+
+    # 3. Aggressive Policy: Recall >= 0.80 (or maximum recall point)
+    valid_agg = df[df["recall"] >= 0.75]
+    if not valid_agg.empty:
+        # Pick point with highest precision among high-recall candidates
+        best_agg_idx = valid_agg["precision"].idxmax()
+        agg_row = df.loc[best_agg_idx].to_dict()
+    else:
+        agg_row = df.iloc[1].to_dict()
+
+    policies = {
+        "conservative": {
+            "name": "Conservative Policy (Minimal Friction)",
+            "rationale": "Prioritizes customer checkout experience by minimizing false positive alarms (lowest FP/TP burden).",
+            "threshold": float(cons_row["threshold"]),
+            "precision": float(cons_row["precision"]),
+            "recall": float(cons_row["recall"]),
+            "flags_per_true_fraud": float(cons_row["flags_per_true_fraud"]),
+            "auto_approved_percentage": float(cons_row["auto_approved_percentage"])
+        },
+        "balanced": {
+            "name": "Balanced Policy (Optimal ROI / F1)",
+            "rationale": "Standard production operating point maximizing net chargeback savings against manual triage operational costs.",
+            "threshold": float(balanced_row["threshold"]),
+            "precision": float(balanced_row["precision"]),
+            "recall": float(balanced_row["recall"]),
+            "f1_score": float(balanced_row["f1_score"]),
+            "flags_per_true_fraud": float(balanced_row["flags_per_true_fraud"]),
+            "auto_approved_percentage": float(balanced_row["auto_approved_percentage"])
+        },
+        "aggressive": {
+            "name": "Aggressive Policy (Maximum Catch Rate)",
+            "rationale": "Activated during active fraud attacks or high-risk MCC categories to capture maximum fraud volume.",
+            "threshold": float(agg_row["threshold"]),
+            "precision": float(agg_row["precision"]),
+            "recall": float(agg_row["recall"]),
+            "flags_per_true_fraud": float(agg_row["flags_per_true_fraud"]),
+            "auto_approved_percentage": float(agg_row["auto_approved_percentage"])
+        }
+    }
+    return policies
 
 
 def get_what_didnt_work_registry() -> List[Dict[str, Any]]:
@@ -278,7 +345,10 @@ def run_layer4_pipeline(
     # 2. Operational Cost Curve
     cost_df = compute_operational_cost_curve(sweep_df)
 
-    # 3. Optional Weighting Impact Sweep (if train features exist)
+    # 3. Synthesize named operating policies
+    policies = synthesize_operational_policies(cost_df)
+
+    # 4. Optional Weighting Impact Sweep (if train features exist)
     weight_sweep_records = []
     if os.path.exists(train_features_path):
         logger.info("Analyzing scale_pos_weight impact on ranking and calibration...")
@@ -288,10 +358,10 @@ def run_layer4_pipeline(
         weight_df = sweep_scale_pos_weight_impact(X_train, y_train, X_test, y_test)
         weight_sweep_records = weight_df.to_dict(orient="records")
 
-    # 4. What Didn't Work Log
+    # 5. What Didn't Work Log
     what_didnt_work = get_what_didnt_work_registry()
 
-    # 5. Save Artifacts
+    # 6. Save Artifacts
     os.makedirs(output_dir, exist_ok=True)
     sweep_parquet_path = os.path.join(output_dir, "threshold_sweep.parquet")
     sweep_csv_path = os.path.join(output_dir, "threshold_sweep.csv")
@@ -311,6 +381,11 @@ def run_layer4_pipeline(
         "overall_pr_auc": float(average_precision_score(y_test, y_prob)),
         "overall_roc_auc": float(roc_auc_score(y_test, y_prob)),
         "brier_score_loss": float(brier_score_loss(y_test, y_prob)),
+        "operational_policies": policies,
+        "cost_assumptions": {
+            "cost_per_manual_review": "$5.00 (industry benchmark for 3-5 min analyst triage)",
+            "chargeback_loss_multiplier": "1.5x transaction dollar amount (goods loss + fee penalties)"
+        },
         "threshold_sweep_sample": cost_df.head(10).to_dict(orient="records"),
         "weight_impact_sweep": weight_sweep_records,
         "what_didnt_work_count": len(what_didnt_work),
