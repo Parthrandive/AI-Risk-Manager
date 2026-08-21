@@ -39,7 +39,7 @@ def main():
         "--quantile",
         type=float,
         default=0.8,
-        help="Chronological train split quantile (e.g. 0.8 for 80% train, 20% test)"
+        help="Chronological train split quantile (e.g. 0.8 for 80%% train, 20%% test)"
     )
 
     args = parser.parse_args()

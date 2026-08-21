@@ -53,22 +53,22 @@ Evaluated strictly on the held-out chronological test split (**118,108 transacti
 
 ### 2. Multi-Threshold Decision Sweep & Synthesized Operational Policies
 
-Rather than cherry-picking an uncalibrated default 0.5 cutoff, the pipeline sweeps decision boundaries across $0.05 \to 0.95$ and synthesizes them into **3 actionable shipping policies**:
+Rather than cherry-picking an uncalibrated default 0.5 cutoff, the pipeline sweeps decision boundaries from $0.001 \to 0.950$ (confirming the net financial benefit peak at $\tau = 0.010$) and synthesizes the spectrum into **3 named shipping policies**:
 
 ```
 Decision Threshold Sweep Spectrum:
-0.05 ────[Balanced Policy]──── 0.10 ────[Aggressive Policy]──── 0.50 ────[Conservative Policy]──── 0.80 ──→ 0.95
+0.001 ──→ 0.010 [Aggressive] ──→ 0.100 ──→ 0.300 [Balanced] ──→ 0.500 ──→ 0.800 [Conservative] ──→ 0.950
 ```
 
 | Policy Profile | Operating Threshold ($\tau$) | Recall (Catch Rate) | Precision | False Positives per True Catch ($\text{FP}/\text{TP}$) | Dollar Capture Rate | Auto-Approved Volume | Strategic Intent |
 |---|---|---|---|---|---|---|---|
-| 🟢 **Balanced Policy** *(Optimal ROI)* | **`0.05`** | **`71.09%`** | `22.51%` | `3.44` | **`71.37%`** *(+\$341.2k Net Benefit)* | `89.13%` | Maximum financial ROI; catches 71% of all fraud dollars while absorbing modest analyst triage load. |
-| 🟡 **Aggressive Policy** *(Spike Containment)* | **`0.10`** | **`57.95%`** | `37.17%` | `1.69` | **`53.80%`** | `94.64%` | Deployed during active attack spikes or high-risk MCC categories with <1.7 false alarms per catch. |
-| 🔴 **Conservative Policy** *(Minimal Friction)* | **`0.80`** | **`20.20%`** | **`90.82%`** | **`0.10`** *(10 true catches / 1 FP)* | `21.40%` | **`99.23%`** | Ultra-low customer friction; near-zero false alarms for premier checkout conversion. |
+| 🟡 **Aggressive Policy** *(Max Catch & Peak Net Benefit)* | **`0.010`** | **`94.78%`** | `6.30%` | `14.87` | **`94.57%`** *(+\$529.1k Net Benefit)* | `48.25%` | Global maximum on net chargeback recovery curve; captures 95% of all fraud dollars, absorbing higher analyst triage load. |
+| 🟢 **Balanced Policy** *(Optimal F1 / Low Friction)* | **`0.300`** | **`38.83%`** | **`67.81%`** | **`0.47`** *(>2 true catches / 1 FP)* | `39.88%` | **`98.03%`** | Standard production baseline maximizing F1 (`0.4938`); flags only 1.97% of traffic with <0.5 false alerts per catch. |
+| 🔴 **Conservative Policy** *(Minimal Customer Friction)* | **`0.800`** | **`20.20%`** | **`90.82%`** | **`0.10`** *(10 true catches / 1 FP)* | `21.40%` | **`99.23%`** | Ultra-low customer friction; 90.8% precision with near-zero false alarms for frictionless VIP checkout conversion. |
 
 > [!NOTE]
 > **Stated Operational Cost Assumptions**:
-> - **Manual Analyst Review Cost**: Assumed at **\$5.00** per flagged case (industry benchmark for 3–5 min review).
+> - **Manual Analyst Review Cost**: Assumed at **\$5.00** per flagged case (industry benchmark for 3–5 min analyst triage).
 > - **Chargeback Loss Multiplier**: Assumed at **1.5x** the transaction dollar amount (goods loss + merchant penalty fees).
 
 ---
