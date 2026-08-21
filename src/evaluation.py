@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SWEEP_THRESHOLDS = [
     0.001, 0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.075,
-    0.10, 0.15, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.85, 0.90, 0.95
+    0.10, 0.15, 0.18, 0.19, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.85, 0.90, 0.95
 ]
 
 
@@ -371,11 +371,13 @@ def get_what_didnt_work_registry() -> List[Dict[str, Any]]:
         {
             "category": "Explainability vs. Predictive Power",
             "hypothesis_or_approach": "Pure Interpretable-Only Features (20 Engineered Signals) vs. Full 427-Feature Bank",
-            "outcome": "Evaluated Trade-off & Implemented Semantic Domain Mapping Bridge",
+            "outcome": "Empirically Quantified & Implemented Opaque Signal Transparency Protocol",
             "root_cause_analysis": (
                 "Training strictly on 20 engineered features achieved PR-AUC = 0.2250, whereas retaining the full 427-feature bank "
-                "lifted PR-AUC to 0.5149 (76.7% of predictive gain lies in Vesta's proprietary V-features). Rather than degrading model accuracy, "
-                "the pipeline retains the full GBDT and implements a domain semantic mapping layer in Layer 5 to translate V-cluster SHAP values into auditable risk factors."
+                "lifted PR-AUC to 0.5149 (76.7% of predictive gain lies in Vesta's undisclosed proprietary V-features). "
+                "Because true V-feature meanings are proprietary and undisclosed, Layer 5 rejects generating speculative semantic definitions. "
+                "Instead, Layer 5 surfaces plain-language audit reasons strictly from our 20 verified engineered features (accounting for 23.3% of gain) "
+                "and attaches an explicit 'Opaque Signal Contribution' disclosure metric reporting the percentage of model confidence driven by undisclosed features."
             )
         }
     ]
