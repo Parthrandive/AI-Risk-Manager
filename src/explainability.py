@@ -476,8 +476,8 @@ def run_layer5_pipeline(
             "gross_intercepted_fraud": total_caught_fraud,
             "gross_interception_rate_pct": round(total_recall, 2),
             "assumed_analyst_efficiency_pct": 85.0,
-            "net_contained_fraud_est": round(fraud_in_block + 0.85 * fraud_in_review, 1),
-            "net_containment_rate_pct": round((fraud_in_block + 0.85 * fraud_in_review) / total_fraud * 100.0, 2) if total_fraud > 0 else 0.0,
+            "net_contained_fraud_est": round(float(fraud_in_block + (85 * fraud_in_review) / 100.0), 1),
+            "net_containment_rate_pct": round(float(fraud_in_block + (85 * fraud_in_review) / 100.0) / total_fraud * 100.0, 2) if total_fraud > 0 else 0.0,
             "containment_note": "Gross rate assumes 100% human analyst resolution on flagged cases. Net rate discounts manual review queue by a realistic 85% resolution efficiency."
         },
         "sample_audit_cards": sample_cards[:10],

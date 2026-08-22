@@ -69,26 +69,25 @@ Evaluated across seeds `[42, 100, 2024]` with strict $t-1$ temporal edge invaria
 
 ---
 
-### 3. Multi-Threshold Decision Sweep & Synthesized Operational Policies
+### 3. Multi-Threshold Decision Sweep & Exploration (Single-Cutoff Profiles)
 
-Rather than cherry-picking an uncalibrated default 0.5 cutoff, the pipeline sweeps decision boundaries from $0.001 \to 0.950$ and synthesizes them into actionable enterprise shipping policies:
+To understand trade-offs across the continuum, the pipeline sweeps decision boundaries from $0.001 \to 0.950$:
 
 ```
 Decision Threshold Sweep Spectrum:
-0.001 ──→ 0.010 [Theoretical Limit] ──→ 0.100 ──→ 0.190 [Primary Ship] ──→ 0.300 [Balanced F1] ──→ 0.800 [VIP] ──→ 0.950
+0.001 ──→ 0.010 [Theoretical Limit] ──→ 0.100 ──→ 0.190 [Capacity Baseline] ──→ 0.300 [Balanced F1] ──→ 0.800 [VIP] ──→ 0.950
 ```
 
 | Policy Profile | Operating Threshold ($\tau$) | Catch Rate (Recall) | Precision | False Positives per True Catch ($\text{FP}/\text{TP}$) | Flagged Volume | Auto-Approved Volume | Strategic Intent & Operational Context |
 |---|---|---|---|---|---|---|---|
-| 🌟 **Production Policy** *(Capacity-Constrained)* | **`0.190`** | **`45.74%`** *(1,859 caught)* | **`53.31%`** | **`0.88`** *(>1.1 true catches / 1 FP)* | **`2.95%`** *(3,487 txns)* | **`97.05%`** | **RECOMMENDED PRIMARY SHIP CANDIDATE.** Designed for fixed enterprise risk teams with a $\le 3.0\%$ review headcount budget. Captures 45.7% of fraud with more true catches than false alarms. |
-| 🟢 **Balanced Policy** *(Optimal F1 / Queue Defense)* | **`0.300`** | **`39.15%`** | **`67.13%`** | **`0.49`** *(>2 true catches / 1 FP)* | `2.01%` | **`97.99%`** | Standard production baseline maximizing harmonic F1 (`0.4946`); flags <2% of traffic. *Optimizes classification balance and queue protection, accepting higher missed chargebacks than the Primary Ship policy.* |
+| 📐 **Single-Threshold Capacity Baseline** *(Historical)* | **`0.190`** | **`45.74%`** *(1,859 caught)* | **`53.31%`** | **`0.88`** *(>1.1 true catches / 1 FP)* | **`2.95%`** *(3,487 txns)* | **`97.05%`** | **SUPERSEDED BY LAYER 5 DUAL-THRESHOLD GATEWAY.** Single-cutoff baseline that established the $\le 3.0\%$ capacity constraint. This single-threshold derivation informed the final Layer 5 gateway design in Section 5, which separately satisfies a $\ge 90.0\%$ precision floor for auto-blocking and a $\le 3.0\%$ review budget. |
+| 🟢 **Balanced Policy** *(Optimal F1 / Queue Defense)* | **`0.300`** | **`39.15%`** | **`67.13%`** | **`0.49`** *(>2 true catches / 1 FP)* | `2.01%` | **`97.99%`** | Standard baseline maximizing harmonic F1 (`0.4946`); flags <2% of traffic. *Optimizes classification balance and queue protection, accepting higher missed chargebacks than the Capacity Baseline.* |
 | 🔴 **Conservative Policy** *(Minimal Friction VIP)* | **`0.800`** | **`20.57%`** | **`91.17%`** | **`0.10`** *(10 true catches / 1 FP)* | `0.78%` | **`99.22%`** | Ultra-low customer friction; 91.2% precision with near-zero false alarms for frictionless VIP checkout conversion. |
 | ⚠️ **Theoretical Ceiling** *(Unconstrained Math Limit)* | **`0.010`** | **`95.10%`** | `6.10%` | `15.39` | `53.64%` *(63k reviews)* | `46.36%` | **THEORETICAL UPPER BOUND (NOT SHIPPED).** Mathematical peak of unconstrained formula (+\$529.1k). Unviable for live deployment without massive reviewer headcount. |
 
 > [!NOTE]
-> **Stated Operational Cost Assumptions & Sensitivity**:
-> - **Manual Review Cost**: Assumed at **\$5.00** per flagged case (industry benchmark for 3–5 min analyst triage). Sensitivity sweep (\$2 $\to$ \$15) confirms stability: under capacity constraints, the operating point remains firmly anchored at $\tau \approx 0.190$.
-> - **Chargeback Loss Multiplier**: Assumed at **1.5x** the transaction dollar amount (goods loss + merchant penalty fees).
+> **Evolution to Layer 5 Dual-Threshold Gateway**:
+> While a single threshold ($\tau = 0.190$) saturates the review capacity budget, it forces analysts to manually adjudicate high-confidence frauds that could be safely blocked automatically. The final shipped production architecture is the **Grounded Three-Way Triage Gateway in Section 5** ($\tau_{\text{low}}=0.145, \tau_{\text{high}}=0.740$), which routes transactions into Auto-Approve, Manual Review, and Auto-Block tiers simultaneously.
 
 ---
 
@@ -129,7 +128,7 @@ Decision Threshold Sweep Spectrum:
   - 🔴 **Auto-Block (`score >= 0.740`)**: **`1,045` transactions (`0.88%` of volume)** automatically blocked with verified **`90.24%` precision** (stopping **`943` frauds**, `23.2%` of test fraud, `102` false blocks).
   - 🛡️ **Containment Metrics**:
     - **Gross Interception Rate**: **`50.94%` (`2,070` / `4,064` frauds)** flagged or blocked *(assumes 100% human analyst resolution on flagged batch)*.
-    - **Net Contained Fraud (Discounted)**: **`46.78%` (`1,900.9` / `4,064` frauds)** stopped *(accounting for a realistic 85% analyst resolution efficiency on the manual review queue)*.
+    - **Net Contained Fraud (Discounted)**: **`46.78%` (`1,901.0` / `4,064` frauds)** stopped *(accounting for a realistic 85% analyst resolution efficiency on the manual review queue)*.
 * **Verifiable Transaction Evidence Trail**:
   - Every review and block card generates a structured `evidence_trail` citing specific factual instrument activity: e.g. `card instrument (card1=3213, card2=459); observed 24h card volume = 2 txns; recency delta = 64699s; prior usage across 8 distinct address regions`.
 * **Opaque Feature Transparency Protocol**:
@@ -173,7 +172,7 @@ We partitioned the full 590,540-transaction dataset into **5 equal-time chronolo
 | **Hardcoded `scale_pos_weight = 28.87`** | *Parameterized* | Multiplying positive gradients by ~29 forced trees into noisy leaf splits, degrading PR-AUC from `0.5149` to `0.4629` and Brier score from `0.0224` to `0.1118`. Parameterized as a sweep. |
 | **Unconstrained $\tau = 0.010$ Default Policy** | *Refactored* | Flat cost formula mathematical peak required reviewing 51.75% of volume (61,121 cases). Replaced with Capacity-Constrained Primary Policy ($\tau = 0.19$, $\le 3\%$ review budget). |
 | **Pure Interpretable-Only Features (20 Signals)** | *Evaluated* | Restricting to 20 engineered features dropped PR-AUC from `0.5149` to `0.2250`. Retained full GBDT with honest Opaque Signal Transparency in Layer 5. |
-| **Relational Graph Embeddings (8 Feats)** | *Evaluated (Null Result)* | Adding 8 temporal relational graph features shifted cross-seed PR-AUC by only `+0.0008` (within seed noise) while auto-blocked frauds dropped from 908 to 878. Information is already subsumed by tabular streaming velocity states. |
+| **Relational Graph Embeddings (16 Feats: 8 Topo + 8 GraphSAGE)** | *Evaluated (Null / Negative Result)* | Adding temporal topological and PyTorch GraphSAGE neural graph features slightly degraded PR-AUC from `0.5100` to `0.5047` and dropped auto-blocked fraud from `908.0` to `862.3`. Relational signals are already subsumed by tabular streaming velocity states, and graph message-passing is constrained by extreme transaction sparsity in payment networks. |
 
 ---
 
