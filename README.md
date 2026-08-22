@@ -49,18 +49,26 @@ Evaluated strictly on the held-out chronological test split (**118,108 transacti
 | **LightGBM Classifier** | `0.4784` *(+0.2950)* | `0.8907` | `80.18%` | `30.46%` | `0.0238` |
 | **XGBoost GBDT (Primary, 429 feats)** | **`0.5121`** *(+0.3287)* | **`0.8967`** | **`81.50%`** | **`31.32%`** | **`0.0225`** |
 
+### 2. Feature Progression & Graph Embedding Ablation Study
+
+Evaluated across seeds `[42, 100, 2024]` with strict $t-1$ temporal edge invariants ($\text{source\_timestamp} \le \text{target\_timestamp}$):
+
+| Feature Configuration | Total Feats | Cross-Seed PR-AUC (Mean ± Std) | Seed 42 PR-AUC | Auto-Blocked Frauds ($\ge 90\%$ Prec) | Net Contained Frauds (85% SLA) | Checkout Fraud Leakage |
+|---|---|---|---|---|---|---|
+| **1. Baseline Feature Bank** | `427` | `0.5105 ± 0.0031` | `0.5149` | `825.7` *(794 – 852)* | `1,868.3` *(45.97%)* | `2,011.7` *(49.50%)* |
+| **2. + Geo-Mismatch Features** | `429` | `0.5100 ± 0.0021` | `0.5121` | **`908.0`** *(890 – 943)* | **`1,901.6`** *(46.79%)* | **`1,987.0`** *(48.89%)* |
+| **3. + Relational Graph Embeddings** | `437` | `0.5108 ± 0.0029` | `0.5094` | `878.7` *(844 – 906)* | `1,891.1` *(46.53%)* | `1,994.3` *(49.07%)* |
+
 > [!NOTE]
-> **Cross-Seed Verification & Geo Feature Operational Spread (427 $\to$ 429 Features)**:
-> - **Aggregate Metric**: Evaluated across seeds `[42, 100, 2024]`, cross-seed mean PR-AUC is $0.5105 \pm 0.0031$ (427 feats) vs $0.5100 \pm 0.0021$ (429 feats) ($\Delta = -0.0005$, within empirical seed variance).
-> - **Cross-Seed Operational Triage Spread**: Evaluated independently across seeds on the held-out test split, geo-mismatch features deliver consistent positive operational gains in every run:
->   - **Auto-Blocked Fraud ($\ge 90\%$ precision)**: **`+82.3 mean frauds`** stopped automatically (range across seeds: **`+38` to `+112`** frauds).
->   - **Net Contained Fraud (85% Analyst SLA)**: **`+33.3 mean net frauds`** saved (range: **`+24.4` to `+41.8`** net frauds).
->   - **Auto-Approve Missed Leakage**: **`-24.7 mean frauds`** reduced (range: **`-33` to `-9`** leaked frauds).
-> - **LightGBM Benchmark Note**: LightGBM's PR-AUC (`0.4784`) reflects canonicalized production parameters (`n_estimators=150`, `learning_rate=0.05`, `random_state=42`) standardized identically alongside XGBoost.
+> **Graph Ablation Finding (Empirical Null Result on Incremental Graph Value)**:
+> - **PR-AUC Impact**: Adding 8 relational graph features (`graph_deg_card`, `graph_deg_device`, `graph_deg_email`, `graph_2hop_device_breadth`, `graph_2hop_email_breadth`, `graph_time_since_last_neighbor`) shifted cross-seed PR-AUC by $+0.0008$ (from $0.5100 \to 0.5108$), which is entirely within the $\pm 0.0025$ empirical seed variance.
+> - **Operational Impact**: The 429-feature Geo model remains superior at the operating thresholds (stopping **`908.0`** auto-blocked frauds vs `878.7` for the graph model).
+> - **Why this happens (Information Subsumption)**: Our Layer 2 `StreamingRiskState` (rolling velocity counters and recency) already captures 1-hop and 2-hop entity activity in tabular form. Adding explicit graph connectivity duplicates this signal without orthogonal variance.
+> - **Framing**: We report this as a measured null result on graph utility without making unverified "abuse-ring" claims (since IEEE-CIS lacks ring labels).
 
 ---
 
-### 2. Multi-Threshold Decision Sweep & Synthesized Operational Policies
+### 3. Multi-Threshold Decision Sweep & Synthesized Operational Policies
 
 Rather than cherry-picking an uncalibrated default 0.5 cutoff, the pipeline sweeps decision boundaries from $0.001 \to 0.950$ and synthesizes them into actionable enterprise shipping policies:
 
@@ -156,6 +164,7 @@ We partitioned the full 590,540-transaction dataset into **5 equal-time chronolo
 | **Hardcoded `scale_pos_weight = 28.87`** | *Parameterized* | Multiplying positive gradients by ~29 forced trees into noisy leaf splits, degrading PR-AUC from `0.5149` to `0.4629` and Brier score from `0.0224` to `0.1118`. Parameterized as a sweep. |
 | **Unconstrained $\tau = 0.010$ Default Policy** | *Refactored* | Flat cost formula mathematical peak required reviewing 51.75% of volume (61,121 cases). Replaced with Capacity-Constrained Primary Policy ($\tau = 0.19$, $\le 3\%$ review budget). |
 | **Pure Interpretable-Only Features (20 Signals)** | *Evaluated* | Restricting to 20 engineered features dropped PR-AUC from `0.5149` to `0.2250`. Retained full GBDT with honest Opaque Signal Transparency in Layer 5. |
+| **Relational Graph Embeddings (8 Feats)** | *Evaluated (Null Result)* | Adding 8 temporal relational graph features shifted cross-seed PR-AUC by only `+0.0008` (within seed noise) while auto-blocked frauds dropped from 908 to 878. Information is already subsumed by tabular streaming velocity states. |
 
 ---
 
@@ -178,7 +187,7 @@ pip install -r requirements.txt
    - `data/raw/train_transaction.csv`
    - `data/raw/train_identity.csv`
 
-2. **Execute Full Pipeline (Layers 1 to 5 + Walk-Forward Proof)**:
+2. **Execute Full Pipeline (Layers 1 to 5 + Walk-Forward + Graph Ablation)**:
    ```bash
    python3 scripts/run_layer1.py
    python3 scripts/run_layer2.py
@@ -186,6 +195,7 @@ pip install -r requirements.txt
    python3 scripts/run_layer4.py
    python3 scripts/run_layer5.py
    python3 scripts/run_walk_forward.py
+   python3 scripts/run_graph_ablation.py
    ```
 
 3. **Run Automated Test Suite**:
