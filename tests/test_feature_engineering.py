@@ -162,6 +162,50 @@ def test_state_continuity_across_split_boundary():
     assert np.isclose(test_feat.loc[0, "amt_to_expanding_card_mean_ratio"], 1.5)
 
 
+def test_geo_mismatch_feature_no_leakage():
+    """Verifies that geo-mismatch and distinct address count features compute strictly up to t-1 with zero lookahead."""
+    # 4 sequential transactions for pure card 7777:
+    # Txn 1 (t=100): first time seen -> distinct count = 0, mismatch = 0
+    # Txn 2 (t=200): addr1=100 -> distinct count = 1, mismatch = 0 (matches history)
+    # Txn 3 (t=300): addr1=200 (new region) -> distinct count = 1 (at t-1 only 100 seen), mismatch = 1
+    # Txn 4 (t=400): addr1=100 (back to most frequent) -> distinct count = 2, mismatch = 0
+    df = pd.DataFrame({
+        "TransactionID": [1, 2, 3, 4],
+        "TransactionDT": [100, 200, 300, 400],
+        "TransactionAmt": [100.0, 100.0, 100.0, 100.0],
+        "card1": [7777, 7777, 7777, 7777],
+        "card2": [1, 1, 1, 1],
+        "card3": [1, 1, 1, 1],
+        "card4": ["visa", "visa", "visa", "visa"],
+        "card5": [1, 1, 1, 1],
+        "card6": ["credit", "credit", "credit", "credit"],
+        "addr1": [100, 100, 200, 100],
+        "addr2": [87, 87, 87, 87]
+    })
+
+    pipeline = RiskFeaturePipeline().fit(df)
+    transformed = pipeline.transform(df)
+
+    assert "card_prior_distinct_addr_count" in transformed.columns
+    assert "is_addr_mismatch_from_card_history" in transformed.columns
+
+    # Txn 1: First time seen
+    assert transformed.loc[0, "card_prior_distinct_addr_count"] == 0
+    assert transformed.loc[0, "is_addr_mismatch_from_card_history"] == 0
+
+    # Txn 2: Repeat with same address
+    assert transformed.loc[1, "card_prior_distinct_addr_count"] == 1
+    assert transformed.loc[1, "is_addr_mismatch_from_card_history"] == 0
+
+    # Txn 3: Mismatch address
+    assert transformed.loc[2, "card_prior_distinct_addr_count"] == 1
+    assert transformed.loc[2, "is_addr_mismatch_from_card_history"] == 1
+
+    # Txn 4: Back to primary address
+    assert transformed.loc[3, "card_prior_distinct_addr_count"] == 2
+    assert transformed.loc[3, "is_addr_mismatch_from_card_history"] == 0
+
+
 def test_run_layer2_pipeline_end_to_end(synthetic_splits):
     train_df, test_df = synthetic_splits
     with tempfile.TemporaryDirectory() as tmpdir:
