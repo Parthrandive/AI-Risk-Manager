@@ -50,12 +50,13 @@ Evaluated strictly on the held-out chronological test split (**118,108 transacti
 | **XGBoost GBDT (Primary, 429 feats)** | **`0.5121`** *(+0.3287)* | **`0.8967`** | **`81.50%`** | **`31.32%`** | **`0.0225`** |
 
 > [!NOTE]
-> **Geo Feature Impact & Operating-Point Divergence (427 $\to$ 429 Features)**:
-> - **Aggregate Metric**: Deterministic global PR-AUC shifted from `0.5149` to `0.5121` ($\Delta = -0.0028$). This minor global dip occurs entirely in the uncalibrated low-score tail ($\tau < 0.15$), where precision shifted slightly from $3.28\% \to 3.20\%$ across tens of thousands of auto-approved transactions the human review queue never touches.
-> - **Operational Operating Points**: At the two specific calibrated operating thresholds where the triage gateway actually acts, geo features improve decision certainty:
->   - **Auto-Blocked Fraud**: Jumped from **`831` $\to$ `943` frauds (+13.5% automated catch)** at verified $\ge 90\%$ precision ($\tau_{\text{high}} = 0.740$).
->   - **Net Contained Fraud**: Lifted from **`46.17%` $\to$ `46.78%` (+24.4 net fraud cases saved)** under the identical 3.0% review headcount budget.
->   - **Auto-Approve Leakage**: Decreased from **`2,003` $\to$ `1,994` missed frauds** (`1.755%` leakage rate).
+> **Cross-Seed Verification & Geo Feature Operational Spread (427 $\to$ 429 Features)**:
+> - **Aggregate Metric**: Evaluated across seeds `[42, 100, 2024]`, cross-seed mean PR-AUC is $0.5105 \pm 0.0031$ (427 feats) vs $0.5100 \pm 0.0021$ (429 feats) ($\Delta = -0.0005$, within empirical seed variance).
+> - **Cross-Seed Operational Triage Spread**: Evaluated independently across seeds on the held-out test split, geo-mismatch features deliver consistent positive operational gains in every run:
+>   - **Auto-Blocked Fraud ($\ge 90\%$ precision)**: **`+82.3 mean frauds`** stopped automatically (range across seeds: **`+38` to `+112`** frauds).
+>   - **Net Contained Fraud (85% Analyst SLA)**: **`+33.3 mean net frauds`** saved (range: **`+24.4` to `+41.8`** net frauds).
+>   - **Auto-Approve Missed Leakage**: **`-24.7 mean frauds`** reduced (range: **`-33` to `-9`** leaked frauds).
+> - **LightGBM Benchmark Note**: LightGBM's PR-AUC (`0.4784`) reflects canonicalized production parameters (`n_estimators=150`, `learning_rate=0.05`, `random_state=42`) standardized identically alongside XGBoost.
 
 ---
 
