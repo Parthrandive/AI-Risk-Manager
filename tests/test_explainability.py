@@ -79,6 +79,10 @@ def test_risk_explainer_routing_and_card():
     assert card["transaction_id"] == 1001
     assert card["decision"] == "MANUAL_REVIEW"
     assert "top_interpretable_factors" in card
+    assert "evidence_trail" in card
+    assert "historical_activity_summary" in card["evidence_trail"]
+    assert "governance_and_audit_architecture" in card
+    assert "framework_principles" in card["governance_and_audit_architecture"]
     assert "opaque_signal_disclosure" in card
     assert "undisclosed_v_feature_contribution_pct" in card["opaque_signal_disclosure"]
 
