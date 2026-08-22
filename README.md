@@ -5,7 +5,9 @@
 [![Status](https://img.shields.io/badge/Status-Validated%20on%20Real%20Data-green.svg)](https://github.com/Parthrandive/AI-Risk-Manager)
 
 > **Razorpay AI Buildathon — Track 02: AI Risk Manager**  
-> An end-to-end, leak-free, explainable transaction fraud detection engine with gray-zone triage abstention and honest evaluation metrics.
+> An end-to-end, leak-free, explainable transaction fraud detection engine with gray-zone triage abstention and honest evaluation metrics.  
+> 
+> 📖 **Looking for a non-technical summary?** Check out the [**Plain-English Guide (Layman's Edition)**](README_SIMPLE.md) to understand how the system works without the math jargon!
 
 ---
 
