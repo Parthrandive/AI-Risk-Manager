@@ -112,7 +112,7 @@ Evaluated across seeds `[42, 100, 2024]` with strict $t-1$ temporal edge invaria
 
 ---
 
-### 3. Multi-Threshold Decision Sweep & Exploration (Single-Cutoff Profiles)
+### 5. Multi-Threshold Decision Sweep & Exploration (Single-Cutoff Profiles)
 
 To understand trade-offs across the continuum, the pipeline sweeps decision boundaries from $0.001 \to 0.950$:
 
@@ -123,14 +123,14 @@ Decision Threshold Sweep Spectrum:
 
 | Policy Profile | Operating Threshold ($\tau$) | Catch Rate (Recall) | Precision | False Positives per True Catch ($\text{FP}/\text{TP}$) | Flagged Volume | Auto-Approved Volume | Strategic Intent & Operational Context |
 |---|---|---|---|---|---|---|---|
-| 📐 **Single-Threshold Capacity Baseline** *(Historical)* | **`0.190`** | **`45.74%`** *(1,859 caught)* | **`53.31%`** | **`0.88`** *(>1.1 true catches / 1 FP)* | **`2.95%`** *(3,487 txns)* | **`97.05%`** | **SUPERSEDED BY LAYER 5 DUAL-THRESHOLD GATEWAY.** Single-cutoff baseline that established the $\le 3.0\%$ capacity constraint. This single-threshold derivation informed the final Layer 5 gateway design in Section 5, which separately satisfies a $\ge 90.0\%$ precision floor for auto-blocking and a $\le 3.0\%$ review budget. |
+| 📐 **Single-Threshold Capacity Baseline** *(Historical)* | **`0.190`** | **`45.74%`** *(1,859 caught)* | **`53.31%`** | **`0.88`** *(>1.1 true catches / 1 FP)* | **`2.95%`** *(3,487 txns)* | **`97.05%`** | **SUPERSEDED BY LAYER 5 DUAL-THRESHOLD GATEWAY.** Single-cutoff baseline that established the $\le 3.0\%$ capacity constraint. This single-threshold derivation informed the final Layer 5 gateway design in Section 6, which separately satisfies a $\ge 90.0\%$ precision floor for auto-blocking and a $\le 3.0\%$ review budget. |
 | 🟢 **Balanced Policy** *(Optimal F1 / Queue Defense)* | **`0.300`** | **`39.15%`** | **`67.13%`** | **`0.49`** *(>2 true catches / 1 FP)* | `2.01%` | **`97.99%`** | Standard baseline maximizing harmonic F1 (`0.4946`); flags <2% of traffic. *Optimizes classification balance and queue protection, accepting higher missed chargebacks than the Capacity Baseline.* |
 | 🔴 **Conservative Policy** *(Minimal Friction VIP)* | **`0.800`** | **`20.57%`** | **`91.17%`** | **`0.10`** *(10 true catches / 1 FP)* | `0.78%` | **`99.22%`** | Ultra-low customer friction; 91.2% precision with near-zero false alarms for frictionless VIP checkout conversion. |
 | ⚠️ **Theoretical Ceiling** *(Unconstrained Math Limit)* | **`0.010`** | **`95.10%`** | `6.10%` | `15.39` | `53.64%` *(63k reviews)* | `46.36%` | **THEORETICAL UPPER BOUND (NOT SHIPPED).** Mathematical peak of unconstrained formula (+\$529.1k). Unviable for live deployment without massive reviewer headcount. |
 
 > [!NOTE]
 > **Evolution to Layer 5 Dual-Threshold Gateway**:
-> While a single threshold ($\tau = 0.190$) saturates the review capacity budget, it forces analysts to manually adjudicate high-confidence frauds that could be safely blocked automatically. The final shipped production architecture is the **Grounded Three-Way Triage Gateway in Section 5** ($\tau_{\text{low}}=0.145, \tau_{\text{high}}=0.740$), which routes transactions into Auto-Approve, Manual Review, and Auto-Block tiers simultaneously.
+> While a single threshold ($\tau = 0.190$) saturates the review capacity budget, it forces analysts to manually adjudicate high-confidence frauds that could be safely blocked automatically. The final shipped production architecture is the **Grounded Three-Way Triage Gateway in Section 6** ($\tau_{\text{low}}=0.145, \tau_{\text{high}}=0.740$), which routes transactions into Auto-Approve, Manual Review, and Auto-Block tiers simultaneously.
 
 ---
 
