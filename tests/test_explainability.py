@@ -81,8 +81,8 @@ def test_risk_explainer_routing_and_card():
     assert "top_interpretable_factors" in card
     assert "evidence_trail" in card
     assert "historical_activity_summary" in card["evidence_trail"]
-    assert "regulatory_governance_framework" in card
-    assert "alignment_standard" in card["regulatory_governance_framework"]
+    assert "governance_and_audit_architecture" in card
+    assert "framework_principles" in card["governance_and_audit_architecture"]
     assert "opaque_signal_disclosure" in card
     assert "undisclosed_v_feature_contribution_pct" in card["opaque_signal_disclosure"]
 

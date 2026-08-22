@@ -312,10 +312,10 @@ class RiskExplainerGateway:
                     "feature set (V1-V339). Verified domain factors above represent the interpretable component."
                 )
             },
-            "regulatory_governance_framework": {
-                "alignment_standard": "Enterprise Model Risk Management (MRM) aligned with RBI/SEBI Explainability & Adverse Action Transparency Principles",
+            "governance_and_audit_architecture": {
+                "framework_principles": "Designed for transparent, auditable automated decisioning and operational model risk management",
                 "human_in_the_loop_safeguard": "Gray-zone model abstention guarantees human analyst adjudication with verifiable factor cards prior to irreversible action.",
-                "adverse_action_justification_available": True if decision in {"MANUAL_REVIEW", "AUTO_BLOCK"} else False
+                "audit_trail_verifiable": True
             }
         }
         return audit_card
