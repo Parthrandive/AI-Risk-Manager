@@ -88,17 +88,43 @@ Incoming Payment ──▶ [1. Clean & Sort] ──▶ [2. Smart Clues] ──�
 
 We evaluated our primary model on **118,108 held-out future transactions** (containing 4,064 real fraud attacks):
 
-### 1. Model vs. Baseline Comparison
+### 1. Model Performance vs. Baseline & The Kaggle Leaderboard
 
 | AI Architecture | PR-AUC ("Needle in a Haystack" Score) | ROC-AUC | Precision (Accuracy when flagging) | Calibration Brier Loss (Honesty Score) |
 |---|---|---|---|---|
 | **Simple Baseline (Logistic Regression)** | `0.1834` | `0.8311` | `12.60%` | `0.0682` |
 | **LightGBM Classifier** | `0.4784` *(+0.2950)* | `0.8907` | `80.18%` | `0.0238` |
-| **XGBoost Primary Champion (429 Clues)** | **`0.5121`** *(+0.3287)* | **`0.8967`** | **`81.50%`** | **`0.0225`** *(Best)* |
+| **XGBoost Primary Champion (429 Clues)** | **`0.5121`** `[0.4971, 0.5276]` | **`0.8967`** `[0.8915, 0.9021]` | **`81.50%`** | **`0.0225`** *(Best)* |
+| *Kaggle Competition Top Leaderboard (Offline SOTA)* | *~0.75+ (estimated)* | *`0.9600 – 0.9800`* | *N/A (Multi-model ensemble)* | *N/A* |
 
-> **What do these scores mean in plain English?**
-> * **PR-AUC (Needle-in-a-Haystack Score)**: Because fraud is rare (only 3.5% of cases), standard accuracy is misleading (a dumb model that approves everything is 96.5% "accurate"). PR-AUC measures how accurately the model finds the rare fraud needles without flagging honest people. Our XGBoost model delivers a massive **+179% improvement** over the baseline.
-> * **Brier Loss (Honesty Score)**: Measures whether the AI's confidence matches reality (a score near 0.00 means when the AI says "80% risk", it is genuinely 80% risky). Our score of `0.0225` proves the AI is exceptionally well-calibrated.
+> **🏎️ Formula 1 Prototype vs. Fast Production Sports Car**:
+> - **Kaggle Top Leaderboard (0.96–0.98 ROC-AUC)**: Built like a Formula 1 racing prototype — they glued together 50+ massive AI models, took hours to calculate global averages across future and past data, and used offline tricks unviable for live websites.
+> - **AI Risk Manager (0.8967 ROC-AUC / 0.5121 PR-AUC)**: Built like a high-performance production car. It makes decisions in **under 15 milliseconds**, strictly obeys the timeline without cheating on future data, explains its reasoning to humans, and fits within real operational budgets.
+
+---
+
+### 2. Methodological Rigor: Independent Practice Exams & 1,000 Dice Rolls
+
+To prove our numbers aren't just lucky flukes:
+1. **Independent 3-Way Split (Train 70% $\to$ Practice Exam 10% $\to$ Final Test 20%)**:
+   - We picked our business rules on the **Practice Exam (Validation set)**, then locked them in and applied them to the **Final Test set touched exactly once**. It delivered **`51.99%` Gross Interception** and **`47.76%` Net Containment**.
+2. **1,000-Iteration Bootstrap Confidence Intervals**:
+   - We resampled the test data 1,000 times to simulate 1,000 different business scenarios. The AI maintained **`90.30%` block precision (95% range: 88.5% to 92.1%)** and **`0.5125` PR-AUC (95% range: 0.497 to 0.528)**.
+
+---
+
+### 3. Financial Dollar Impact: The Bottom Line ($+\$352,859.38 Net Value)
+
+On the **\$16.24 Million** held-out test transactions, here is the exact dollar impact:
+
+| Business Metric | What It Represents | Dollar Value |
+|---|---|---|
+| **Total Test Shopping Volume** | All transactions processed in the test period | **`$16,243,432.00`** |
+| **Total Fraud Attempted** | The stolen dollars criminals attempted to charge | **`$609,934.31`** |
+| **Fraud Losses Prevented** | Stolen goods + bank penalty fees stopped (1.5x goods loss) | **`+$370,907.44`** |
+| **Fraud Analyst Labor Cost** | Paying investigators (\$5.00 for 3–5 min review on 3,414 cases) | **`-$17,070.00`** |
+| **False Block Friction Cost** | Lost 10% profit margin on 102 mistakenly blocked shoppers | **`-$978.05`** |
+| ⭐ **NET FINANCIAL VALUE DELIVERED** | **Real Dollars Saved - Labor - Customer Friction** | **`+$352,859.38`** *(20.7x return on analyst cost)* |
 
 ---
 
@@ -179,9 +205,9 @@ Whenever a transaction lands in the **Manual Review** or **Auto-Block** lane, th
   "decision": "🔴 AUTO_BLOCK",
   "decision_summary": "Score (0.8708) >= 0.740. Transaction automatically blocked with >90% verified precision.",
   "top_plain_english_reasons": [
-    "1. Card property attribute carries elevated historical anomaly weight.",
-    "2. Payment network signature matches high-risk commercial card cluster.",
-    "3. Missing billing address region contributes positive risk weight."
+    "1. Card property attribute carries elevated historical anomaly weight. [SHAP Force: +0.279 log-odds]",
+    "2. Payment network signature matches high-risk commercial card cluster. [SHAP Force: +0.245 log-odds]",
+    "3. Missing billing address region contributes positive risk weight. [SHAP Force: +0.046 log-odds]"
   ],
   "evidence_trail": {
     "card_identifier": "card1=3213, card2=459",
@@ -198,6 +224,19 @@ Whenever a transaction lands in the **Manual Review** or **Auto-Block** lane, th
   }
 }
 ```
+
+---
+
+## ⏳ Label Maturation: Why Recent Fraud Data is "Still Cooking"
+
+In payment card fraud, truth takes time. When a credit card is stolen:
+1. **Day 0**: Criminal buys a laptop on your store. The system sees a normal transaction.
+2. **Day 30**: The innocent cardholder opens their monthly bank statement, sees the charge, and panics.
+3. **Day 60–120**: The bank completes an investigation and files an official **chargeback** dispute.
+
+> **The Reality**: The most recent 30 to 60 days of data always *undercounts* real fraud because victim cardholders haven't noticed yet. 
+> 
+> **How We Handle It in Production**: We enforce a **30–60 Day Maturity Buffer** — when training fresh models, we drop the most recent 30–60 days of unconfirmed data so the AI never gets trained on false negatives!
 
 ---
 

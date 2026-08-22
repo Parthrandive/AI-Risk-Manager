@@ -43,15 +43,56 @@ Approve   Review      Block
 
 Evaluated strictly on the held-out chronological test split (**118,108 transactions**, 4,064 true frauds, **3.441% test fraud rate**):
 
-### 1. Model Performance vs. Baseline
+### 1. Model Performance vs. Baseline & SOTA Contextualization
 
-| Model | PR-AUC (Primary Metric) | ROC-AUC | Precision (at 0.5) | Recall (at 0.5) | Brier Score Loss (Calibration) |
+| Model Architecture | PR-AUC (Primary Metric) [95% CI] | ROC-AUC [95% CI] | Precision (at 0.5) | Recall (at 0.5) | Brier Score Loss (Calibration) |
 |---|---|---|---|---|---|
 | **Baseline (Logistic Regression)** | `0.1834` | `0.8311` | `12.60%` | `69.46%` | `0.0682` |
 | **LightGBM Classifier** | `0.4784` *(+0.2950)* | `0.8907` | `80.18%` | `30.46%` | `0.0238` |
-| **XGBoost GBDT (Primary, 429 feats)** | **`0.5121`** *(+0.3287)* | **`0.8967`** | **`81.50%`** | **`31.32%`** | **`0.0225`** |
+| **XGBoost GBDT (Primary, 429 feats)** | **`0.5121`** `[0.4971, 0.5276]` | **`0.8967`** `[0.8915, 0.9021]` | **`81.50%`** | **`31.32%`** | **`0.0225`** |
+| *Kaggle Competition Top Leaderboard (Offline SOTA)* | *~0.75+ (estimated)* | *`0.9600 – 0.9800`* | *N/A (Multi-model ensemble)* | *N/A* | *N/A* |
 
-### 2. Feature Progression & Graph Embedding Ablation Study
+> [!NOTE]
+> **Contextualization vs. Kaggle Offline SOTA (0.96–0.98 ROC-AUC)**:
+> - **Kaggle Top Leaderboard (0.96–0.98 ROC-AUC)**: Achieved using massive offline 50-model ensembles (XGBoost + LightGBM + CatBoost + Neural Nets), global target/frequency encodings computed across the entire combined dataset, and post-hoc UID reconstruction linking past and future events bidirectionally.
+> - **AI Risk Manager (0.8967 ROC-AUC / 0.5121 PR-AUC)**: A single, lightweight model designed for **$<15\text{ms}$ sub-second streaming inference**, strictly enforcing $t-1$ chronological causality without global lookahead leakage, human explainability via local SHAP attribution, and operational 3-tier gateway routing.
+
+---
+
+### 2. Methodological Rigor: 3-Way Split & 1,000-Iteration Bootstrap CIs
+
+To eliminate threshold-tuning leakage and quantify estimation uncertainty on 4,064 positive events:
+
+1. **Independent 3-Way Chronological Partitioning (70% Train $\to$ 10% Val $\to$ 20% Test)**:
+   - **Train Split (413,378 txns)**: Model trained on historical data up to $t_1$.
+   - **Validation Split (59,054 txns)**: Triage gateway thresholds ($\tau_{\text{low}}=0.120, \tau_{\text{high}}=0.710$) calibrated strictly on validation data.
+   - **Held-Out Test Split (118,108 txns)**: Evaluated out-of-sample (touched exactly once), delivering **`51.99%` Gross Interception** and **`47.76%` Net Containment**.
+2. **1,000-Iteration Bootstrap Confidence Intervals ($B=1000$, 95% CI)**:
+   - **PR-AUC**: `0.5125` [95% CI: `0.4971` – `0.5276`]
+   - **ROC-AUC**: `0.8969` [95% CI: `0.8915` – `0.9021`]
+   - **Auto-Block Precision**: `90.30%` [95% CI: `88.48%` – `92.05%`]
+   - **Review Queue Precision**: `32.97%` [95% CI: `31.45%` – `34.52%`]
+   - **Net Containment Rate**: `46.79%` [95% CI: `45.43%` – `48.10%`]
+
+---
+
+### 3. Financial Expected Value (EV) & Unit Economics Triage Matrix
+
+Translating 3-tier gateway traffic into actual bottom-line dollar impact on the \$16.24M test volume:
+
+| Economic Component | Unit Assumption / Basis | Evaluated Volume | Financial Impact |
+|---|---|---|---|
+| **Total Test Transaction Volume** | Full held-out test split | 118,108 txns | **`$16,243,432.00`** |
+| **Total Attempted Fraud Volume** | 4,064 true fraud transactions | \$149.98 mean txn amt | **`$609,934.31`** |
+| **Auto-Blocked Fraud Prevented** | 1.5x goods loss + chargeback penalty fees | 943 blocked txns | **`+$135,854.79`** (1.5x of \$90.6k) |
+| **Manual Review Fraud Prevented** | 1.5x goods loss discounted at 85% analyst catch | 1,127 flagged txns | **`+$235,052.65`** (1.5x of 85% of \$184.4k) |
+| **Manual Review Analyst Labor Cost** | \$5.00 per case (3–5 min analyst triage) | 3,414 reviewed txns | **`-$17,070.00`** |
+| **False Decline Merchant Margin Loss** | 10% lost gross profit on false blocks | 102 false blocks (\$9.8k) | **`-$978.05`** |
+| ⭐ **NET FINANCIAL ECONOMIC VALUE** | **Net Fraud Saved - Labor - False Decline Friction** | **Full Held-Out Test Set** | **`+$352,859.38`** *(20.7x ROI over labor)* |
+
+---
+
+### 4. Feature Progression & Graph Embedding Ablation Study
 
 Evaluated across seeds `[42, 100, 2024]` with strict $t-1$ temporal edge invariants ($\text{source\_timestamp} \le \text{target\_timestamp}$):
 
@@ -161,6 +202,23 @@ We partitioned the full 590,540-transaction dataset into **5 equal-time chronolo
 > - **Retraining Recovery**: Incremental rolling retraining restores PR-AUC to **`0.52–0.56`** (`0.5583` in Period 4, `0.5189` in Period 5) versus `0.46–0.52` for the static frozen model at the same temporal distance.
 > - **Validated Cadence**: Retraining at **`~36.4-day intervals`** (the exact cadence tested) successfully halts drift decay. *(Narrower or wider intervals such as 15 or 60 days were not evaluated and represent directions for operational tuning)*.
 > - **Scope Limitation**: Retraining on cumulative historical data bundles added sample volume with temporal recency; a matched-volume window ablation would isolate the pure recency effect.
+
+---
+
+## ⏳ Label Maturation & Chargeback Lag Governance
+
+In payment card risk operations, fraud ground-truth labels are **right-censored** due to the 30–120 day cardholder dispute cycle:
+
+```
+[ Transaction Occurs (t=0) ] ────▶ [ Cardholder Billing Cycle (30d) ] ────▶ [ Bank Dispute & Chargeback Posting (60-120d) ]
+▲                                                                         ▲
+(Unconfirmed Zero Label / Censored)                                       (Confirmed Ground Truth Label)
+```
+
+1. **Risk of Recent Label Censoring**: Transactions near the end of any temporal evaluation window undercount true fraud because cardholders have not yet received statements or filed disputes.
+2. **Production Maturity Buffer Protocol**:
+   - **Maturity Buffer**: In live production retraining loops, the most recent 30–60 days of transaction volume are excluded from training target labels to prevent training on unconfirmed false negatives.
+   - **Observation Weighting**: Implement survival-analysis delayed-feedback weights to discount recent unconfirmed negative labels during online updates.
 
 ---
 

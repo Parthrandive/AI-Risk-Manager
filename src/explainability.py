@@ -252,15 +252,23 @@ class RiskExplainerGateway:
         domain_shap_items.sort(key=lambda x: x[1], reverse=True)
 
         plain_language_reasons = []
+        structured_shap_attributions = []
         for col_name, shap_val, feat_val in domain_shap_items:
             reason = self.format_interpretable_reason(col_name, feat_val, shap_val)
             if reason and reason not in plain_language_reasons:
-                plain_language_reasons.append(reason)
+                formatted_reason = f"{reason} [SHAP Force: {shap_val:+.3f} log-odds]"
+                plain_language_reasons.append(formatted_reason)
+                structured_shap_attributions.append({
+                    "feature_name": col_name,
+                    "feature_value": round(float(feat_val), 2),
+                    "shap_force_log_odds": round(float(shap_val), 4),
+                    "plain_reason": reason
+                })
             if len(plain_language_reasons) >= 3:
                 break
 
         if not plain_language_reasons:
-            plain_language_reasons.append("Risk profile evaluated within expected parameters across verified domain signals.")
+            plain_language_reasons.append("Risk profile evaluated within expected parameters across verified domain signals [SHAP Force: baseline].")
 
         opaque_pct = round((opaque_v_abs_sum / total_abs_shap * 100.0), 1) if total_abs_shap > 0 else 0.0
 
@@ -299,6 +307,7 @@ class RiskExplainerGateway:
             },
             "decision_summary": self._get_decision_summary(decision, risk_score),
             "top_interpretable_factors": plain_language_reasons,
+            "structured_shap_attributions": structured_shap_attributions,
             "evidence_trail": {
                 "instrument_proxy": f"card1_{c1}_card2_{c2}_card3_{c3}",
                 "historical_activity_summary": evidence_summary_str,
