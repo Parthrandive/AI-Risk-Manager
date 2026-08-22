@@ -127,6 +127,23 @@ Decision Threshold Sweep Spectrum:
 
 ---
 
+## ⏳ Walk-Forward Robustness Proof & Drift Cadence
+
+We partitioned the full 590,540-transaction dataset into **5 equal-time chronological windows (~36.4 days each)** across the ~182-day span (each period containing >104k txns and >3,500 fraud cases):
+
+| Evaluation Window | Temporal Distance | Frozen Model (Trained on P1-2) PR-AUC | Rolling Retrained Model PR-AUC | Retraining Lift ($\Delta$) | 3% Capacity Recall |
+|---|---|---|---|---|---|
+| **Period 3** | `+18.2 days` | **`0.5477`** | *(Baseline)* | — | **`47.57%`** (59.4% prec) |
+| **Period 4** | `+54.6 days` | **`0.5230`** *(-0.0247)* | **`0.5583`** *(Retrained P1-3)* | **`+0.0353`** | **`44.30%`** (58.5% prec) |
+| **Period 5** | `+91.0 days` | **`0.4644`** *(-0.0833)* | **`0.5189`** *(Retrained P1-4)* | **`+0.0545`** | **`42.22%`** (49.5% prec) |
+
+> [!IMPORTANT]
+> **Production Retraining Cadence Finding**:
+> - **Empirical Drift**: A static model frozen in time degrades by **`-0.0833 PR-AUC`** and loses **`5.35pp in recall`** over 90 days as fraud patterns shift.
+> - **Retraining Recovery**: Incremental rolling retraining recovers **`+0.0545 PR-AUC`** in Period 5, proving that a **30–45 day retraining cadence** is required in production to sustain peak detection efficacy.
+
+---
+
 ## 📝 "What Didn't Work" Registry & Lessons Learned
 
 | Attempted Approach | Outcome | Root Cause Analysis & Empirical Pivot |
@@ -153,19 +170,20 @@ cd AI-Risk-Manager
 pip install -r requirements.txt
 ```
 
-### Running the End-to-End 5-Layer Pipeline
+### Running the End-to-End Pipeline
 
 1. **Place IEEE-CIS CSVs in `data/raw/`**:
    - `data/raw/train_transaction.csv`
    - `data/raw/train_identity.csv`
 
-2. **Execute Full Pipeline (Layers 1 to 5)**:
+2. **Execute Full Pipeline (Layers 1 to 5 + Walk-Forward Proof)**:
    ```bash
    python3 scripts/run_layer1.py
    python3 scripts/run_layer2.py
    python3 scripts/run_layer3.py
    python3 scripts/run_layer4.py
    python3 scripts/run_layer5.py
+   python3 scripts/run_walk_forward.py
    ```
 
 3. **Run Automated Test Suite**:
