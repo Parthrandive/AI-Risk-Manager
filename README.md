@@ -55,15 +55,16 @@ Evaluated across seeds `[42, 100, 2024]` with strict $t-1$ temporal edge invaria
 
 | Feature Configuration | Total Feats | Cross-Seed PR-AUC (Mean ± Std) | Seed 42 PR-AUC | Auto-Blocked Frauds ($\ge 90\%$ Prec) | Net Contained Frauds (85% SLA) | Checkout Fraud Leakage |
 |---|---|---|---|---|---|---|
-| **1. Baseline Feature Bank** | `427` | `0.5105 ± 0.0031` | `0.5149` | `825.7` *(794 – 852)* | `1,868.3` *(45.97%)* | `2,011.7` *(49.50%)* |
-| **2. + Geo-Mismatch Features** | `429` | `0.5100 ± 0.0021` | `0.5121` | **`908.0`** *(890 – 943)* | **`1,901.6`** *(46.79%)* | **`1,987.0`** *(48.89%)* |
-| **3. + Relational Graph Embeddings** | `437` | `0.5108 ± 0.0029` | `0.5094` | `878.7` *(844 – 906)* | `1,891.1` *(46.53%)* | `1,994.3` *(49.07%)* |
+| **1. Baseline Feature Bank** | `427` | `0.5105 ± 0.0031` | `0.5149` *(0.5148786)* | `825.7` *(794 – 852)* | `1,868.3` *(45.97%)* | `2,011.7` *(49.50%)* |
+| **2. + Geo-Mismatch Features** | `429` | `0.5100 ± 0.0021` | `0.5121` *(0.5120409)* | **`908.0`** *(890 – 943)* | **`1,901.6`** *(46.79%)* | **`1,987.0`** *(48.89%)* |
+| **3. Baseline + Geo + Graph Embeddings** | `437` | `0.5108 ± 0.0029` | `0.5094` *(0.5093681)* | `878.7` *(844 – 906)* | `1,891.1` *(46.53%)* | `1,994.3` *(49.07%)* |
 
 > [!NOTE]
-> **Graph Ablation Finding (Empirical Null Result on Incremental Graph Value)**:
-> - **PR-AUC Impact**: Adding 8 relational graph features (`graph_deg_card`, `graph_deg_device`, `graph_deg_email`, `graph_2hop_device_breadth`, `graph_2hop_email_breadth`, `graph_time_since_last_neighbor`) shifted cross-seed PR-AUC by $+0.0008$ (from $0.5100 \to 0.5108$), which is entirely within the $\pm 0.0025$ empirical seed variance.
-> - **Operational Impact**: The 429-feature Geo model remains superior at the operating thresholds (stopping **`908.0`** auto-blocked frauds vs `878.7` for the graph model).
-> - **Why this happens (Information Subsumption)**: Our Layer 2 `StreamingRiskState` (rolling velocity counters and recency) already captures 1-hop and 2-hop entity activity in tabular form. Adding explicit graph connectivity duplicates this signal without orthogonal variance.
+> **Graph Ablation Finding (Empirical Null Result & Information Subsumption Proof)**:
+> - **PR-AUC Impact**: Adding 8 relational graph features (`graph_deg_card`, `graph_deg_device`, `graph_deg_email`, `graph_2hop_device_breadth`, `graph_2hop_email_breadth`, `graph_time_since_last_neighbor`) shifted cross-seed PR-AUC by $+0.0008$ (from $0.5100 \to 0.5108$), which is entirely within the $\pm 0.0025$ empirical seed variance. *(Note on range: Seed 2024's PR-AUC of `0.5148638` and Baseline Seed 42's `0.5148786` coincidentally round to `0.5149` to 4 decimal places, confirmed via unrounded verification)*.
+> - **Canonical Seed 42 Behavior**: At the canonical seed used elsewhere in the documentation, the graph model underperforms the Geo model (`0.5094` vs `0.5121`); averaged across all seeds, the effect is within noise in either direction.
+> - **Operational Impact**: The 429-feature Geo model remains superior at the calibrated operating thresholds (stopping **`908.0`** auto-blocked frauds vs `878.7` for the graph model).
+> - **Measured Information Subsumption**: Tree gain importance confirms that the model actively splits on graph features (e.g. `graph_deg_email` Gain: `43.07`, `graph_deg_card` Gain: `23.27`), but simultaneously reduces split weight on existing velocity counters (`card_txn_count_24h` gain drops from `23.40` $\to$ `16.28`). The trees substitute collinear relational graph features for existing streaming tabular states without adding orthogonal predictive power.
 > - **Framing**: We report this as a measured null result on graph utility without making unverified "abuse-ring" claims (since IEEE-CIS lacks ring labels).
 
 ---
