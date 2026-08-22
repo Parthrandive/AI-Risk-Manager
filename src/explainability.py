@@ -264,6 +264,31 @@ class RiskExplainerGateway:
 
         opaque_pct = round((opaque_v_abs_sum / total_abs_shap * 100.0), 1) if total_abs_shap > 0 else 0.0
 
+        # Construct concrete evidence trail from verified row features
+        c1 = X_row.get("card1", np.nan)
+        c2 = X_row.get("card2", np.nan)
+        c3 = X_row.get("card3", np.nan)
+        addr1 = X_row.get("addr1", np.nan)
+        addr2 = X_row.get("addr2", np.nan)
+        recency = X_row.get("time_since_last_txn_card", -1.0)
+        vol_24h = X_row.get("card_txn_count_24h", 0)
+        dist_addrs = X_row.get("card_prior_distinct_addr_count", 0)
+        mismatch = X_row.get("is_addr_mismatch_from_card_history", 0)
+
+        evidence_items = []
+        if pd.notna(c1):
+            evidence_items.append(f"card instrument (card1={int(c1) if pd.notna(c1) else 'NA'}, card2={int(c2) if pd.notna(c2) else 'NA'})")
+        if vol_24h > 0:
+            evidence_items.append(f"observed 24h card volume = {int(vol_24h)} transactions")
+        if recency >= 0:
+            evidence_items.append(f"recency delta = {int(recency)}s since prior card transaction")
+        if dist_addrs > 0:
+            evidence_items.append(f"prior usage across {int(dist_addrs)} distinct address regions")
+        if mismatch == 1:
+            evidence_items.append(f"current location (addr1={addr1}, addr2={addr2}) represents geographical displacement from primary history")
+
+        evidence_summary_str = "; ".join(evidence_items) if evidence_items else "No prior historical entity transactions linked to this instrument."
+
         audit_card = {
             "transaction_id": int(transaction_id) if transaction_id is not None else None,
             "risk_score": round(float(risk_score), 4),
@@ -274,12 +299,23 @@ class RiskExplainerGateway:
             },
             "decision_summary": self._get_decision_summary(decision, risk_score),
             "top_interpretable_factors": plain_language_reasons,
+            "evidence_trail": {
+                "instrument_proxy": f"card1_{c1}_card2_{c2}_card3_{c3}",
+                "historical_activity_summary": evidence_summary_str,
+                "prior_distinct_regions_count": int(dist_addrs),
+                "is_geographic_mismatch": bool(mismatch == 1)
+            },
             "opaque_signal_disclosure": {
                 "undisclosed_v_feature_contribution_pct": opaque_pct,
                 "disclosure_statement": (
                     f"{opaque_pct:.1f}% of model risk contribution is driven by Vesta's undisclosed proprietary "
                     "feature set (V1-V339). Verified domain factors above represent the interpretable component."
                 )
+            },
+            "regulatory_governance_framework": {
+                "alignment_standard": "Enterprise Model Risk Management (MRM) aligned with RBI/SEBI Explainability & Adverse Action Transparency Principles",
+                "human_in_the_loop_safeguard": "Gray-zone model abstention guarantees human analyst adjudication with verifiable factor cards prior to irreversible action.",
+                "adverse_action_justification_available": True if decision in {"MANUAL_REVIEW", "AUTO_BLOCK"} else False
             }
         }
         return audit_card

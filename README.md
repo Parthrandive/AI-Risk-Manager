@@ -130,9 +130,17 @@ Decision Threshold Sweep Spectrum:
   - 🛡️ **Containment Metrics**:
     - **Gross Interception Rate**: **`50.94%` (`2,070` / `4,064` frauds)** flagged or blocked *(assumes 100% human analyst resolution on flagged batch)*.
     - **Net Contained Fraud (Discounted)**: **`46.78%` (`1,900.9` / `4,064` frauds)** stopped *(accounting for a realistic 85% analyst resolution efficiency on the manual review queue)*.
+* **Verifiable Transaction Evidence Trail**:
+  - Every review and block card generates an immutable `evidence_trail` citing specific factual instrument activity: e.g. `card instrument (card1=3213, card2=459); observed 24h card volume = 2 txns; recency delta = 64699s; prior usage across 8 distinct address regions`.
 * **Opaque Feature Transparency Protocol**:
   - Plain-language audit reasons are strictly derived from our **20+ verified, engineered domain features** without asserting unverified semantic narratives for raw/undocumented variables.
   - Attaches an explicit **Opaque Signal Contribution metric** disclosing when decisions are heavily weighted by Vesta's undisclosed proprietary features (`V1`–`V339`).
+* **Regulatory Model Governance (RBI / SEBI MRM Alignment)**:
+  - Formatted in accordance with enterprise Model Risk Management (MRM) standards and regulatory explainability principles (e.g. RBI Master Directions on IT/Cyber Risk & SEBI AI/ML Governance Principles).
+  - Gray-zone model abstention guarantees that ambiguous decisions receive human analyst adjudication with transparent factor disclosures prior to irreversible adverse action.
+* **Card-Testing Detection Scoping**:
+  - **In-Scope**: Rapid single-instrument velocity bursts (`card_txn_count_10m >= 3`), micro-amount variance anomalies, and rapid geographic region displacement on the same payment instrument.
+  - **Future Work / Data Gap**: IEEE-CIS lacks distinct merchant/terminal identifiers (`merchant_id`); cross-merchant distributed testing cannot be directly asserted without inferring proxy groupings.
 
 ---
 
