@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Step 3: Graph Embedding Ablation Study CLI Runner.
-Evaluates whether relational graph features improve the existing fraud classifier across 3 seeds.
+Trains PyTorch Temporal GraphSAGE, records loss curve convergence,
+and evaluates downstream XGBoost performance across 3 seeds.
 """
 
 import os
@@ -17,6 +18,7 @@ from sklearn.metrics import precision_recall_curve, roc_auc_score, auc, brier_sc
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.graph_embeddings import TemporalGraphPipeline
+from src.gnn_model import train_temporal_graphsage
 from src.explainability import calibrate_gateway_thresholds
 
 
@@ -26,41 +28,68 @@ def run_graph_ablation(
     raw_train_path: str = "data/processed/train.parquet",
     raw_test_path: str = "data/processed/test.parquet",
     output_dir: str = "data/processed",
-    seeds: list = [42, 100, 2024]
+    seeds: list = [42, 100, 2024],
+    epochs: int = 10
 ):
-    print("=== Starting Step 3: Relational Graph Embedding Ablation Study ===")
+    print("=== Starting Step 3: Relational Graph Embedding Ablation & Convergence Study ===")
     print("Loading feature matrices and raw data...")
     train_feat = pd.read_parquet(train_feat_path)
     test_feat = pd.read_parquet(test_feat_path)
     raw_train = pd.read_parquet(raw_train_path)
     raw_test = pd.read_parquet(raw_test_path)
 
-    # 1. Generate 8 Relational Graph Features with Strict Temporal Edge Invariant
-    print("Generating N=8 inductive temporal relational graph features across train & test...")
+    # 1. Train PyTorch GraphSAGE and Track Convergence Loss Curve
+    print("\n--- Phase 1: Training PyTorch Temporal GraphSAGE ---")
+    core_features = [
+        "TransactionAmt", "card1", "card2", "card3", "card5",
+        "addr1", "addr2", "card_txn_count_10m", "card_txn_count_1h",
+        "card_txn_count_24h", "time_since_last_txn_card",
+        "amt_to_expanding_card_mean_ratio"
+    ]
+    core_features = [c for c in core_features if c in train_feat.columns]
+
+    gnn_model, convergence_meta, gnn_emb_tr, gnn_emb_te = train_temporal_graphsage(
+        train_df=train_feat,
+        test_df=test_feat,
+        core_features=core_features,
+        epochs=epochs,
+        batch_size=2048,
+        learning_rate=0.005,
+        emb_dim=8
+    )
+
+    # 2. Generate 8 Relational Graph Features with Strict Temporal Edge Invariant
+    print("\n--- Phase 2: Generating Inductive Relational Graph Features ---")
     graph_pipe = TemporalGraphPipeline()
     train_graph, test_graph = graph_pipe.transform_splits(raw_train, raw_test)
 
-    # Merge graph features into feature matrices
-    X_tr_429 = train_feat.copy()
-    X_te_429 = test_feat.copy()
+    # Attach both topological graph features and GraphSAGE neural embeddings
+    X_tr_aug = train_feat.copy()
+    X_te_aug = test_feat.copy()
 
     exclude_cols = {"TransactionID", "TransactionDT", "isFraud", "_card_proxy", "_device_proxy"}
-    base_feat_cols = [c for c in X_tr_429.columns if c not in exclude_cols and pd.api.types.is_numeric_dtype(X_tr_429[c].dtype)]
+    base_feat_cols = [c for c in X_tr_aug.columns if c not in exclude_cols and pd.api.types.is_numeric_dtype(X_tr_aug[c].dtype)]
 
     graph_cols = list(train_graph.columns)
     for c in graph_cols:
-        X_tr_429[c] = train_graph[c].values
-        X_te_429[c] = test_graph[c].values
+        X_tr_aug[c] = train_graph[c].values
+        X_te_aug[c] = test_graph[c].values
+
+    for dim in range(8):
+        col_name = f"graphsage_emb_{dim}"
+        X_tr_aug[col_name] = gnn_emb_tr[:, dim]
+        X_te_aug[col_name] = gnn_emb_te[:, dim]
+        graph_cols.append(col_name)
 
     augmented_feat_cols = base_feat_cols + graph_cols
-    print(f"Feature set expanded: 429 features + 8 graph features = {len(augmented_feat_cols)} total features.")
+    print(f"Feature set expanded: 429 features + 16 graph features = {len(augmented_feat_cols)} total features.")
 
     y_tr = train_feat["isFraud"].values
     y_te = test_feat["isFraud"].values
     total_test_fraud = int(np.sum(y_te))
 
-    # 2. Evaluate across 3 seeds under canonical hyperparameters
-    print(f"Training and evaluating Graph-Augmented XGBoost across seeds {seeds}...")
+    # 3. Evaluate across 3 seeds under canonical hyperparameters
+    print(f"\n--- Phase 3: Evaluating Downstream XGBoost across seeds {seeds} ---")
     results_per_seed = []
 
     for s in seeds:
@@ -75,8 +104,8 @@ def run_graph_ablation(
             random_state=s,
             n_jobs=-1
         )
-        clf.fit(X_tr_429[augmented_feat_cols], y_tr)
-        prob = clf.predict_proba(X_te_429[augmented_feat_cols])[:, 1]
+        clf.fit(X_tr_aug[augmented_feat_cols], y_tr)
+        prob = clf.predict_proba(X_te_aug[augmented_feat_cols])[:, 1]
 
         p_curve, r_curve, _ = precision_recall_curve(y_te, prob)
         pr_auc_val = float(auc(r_curve, p_curve))
@@ -119,9 +148,9 @@ def run_graph_ablation(
     leaks = [r["leaked_fraud"] for r in results_per_seed]
 
     summary_payload = {
-        "model_name": "Graph-Augmented XGBoost (437 Features)",
+        "model_name": "Graph-Augmented XGBoost (445 Features)",
         "evaluated_features_count": len(augmented_feat_cols),
-        "graph_features_count": len(graph_cols),
+        "graphsage_convergence": convergence_meta,
         "seeds_evaluated": seeds,
         "results_per_seed": results_per_seed,
         "cross_seed_aggregate": {
@@ -152,22 +181,28 @@ def run_graph_ablation(
 def main():
     parser = argparse.ArgumentParser(description="Run Step 3: Graph Embedding Ablation Study.")
     parser.add_argument("--output-dir", type=str, default="data/processed")
+    parser.add_argument("--epochs", type=int, default=10)
     args = parser.parse_args()
 
-    results = run_graph_ablation(output_dir=args.output_dir)
+    results = run_graph_ablation(output_dir=args.output_dir, epochs=args.epochs)
     agg = results["cross_seed_aggregate"]
+    conv = results["graphsage_convergence"]
 
     print("\n" + "=" * 96)
-    print("🚀 STEP 3: RELATIONAL GRAPH EMBEDDING ABLATION RESULTS")
+    print("🚀 STEP 3: RELATIONAL GRAPH EMBEDDING ABLATION & CONVERGENCE RESULTS")
     print("=" * 96)
-    print(f"• Features Evaluated:        437 features (429 Baseline + 8 Relational Graph Features)")
-    print(f"• Graph Features Added:      graph_deg_card, graph_deg_device, graph_deg_email,")
-    print(f"                             graph_2hop_device_breadth, graph_2hop_email_breadth,")
-    print(f"                             graph_time_since_last_neighbor, graph_total_relational_degree,")
-    print(f"                             graph_multi_identity_active")
+    print(f"• Features Evaluated:        {results['evaluated_features_count']} features (429 Tabular + 16 Graph Features)")
     print(f"• Invariant Verification:    100% Guaranteed (source_timestamp <= target_timestamp)")
 
-    print("\n📊 1. AGGREGATE MODEL PERFORMANCE (CROSS-SEED MEAN ± STD):")
+    print("\n📈 1. GRAPHSAGE TRAINING CONVERGENCE LOSS CURVE:")
+    print("-" * 96)
+    print(f"• Initial Loss (Epoch 1):    {conv['initial_loss']:.4f}")
+    print(f"• Final Loss (Epoch {conv['epochs_trained']}):      {conv['final_loss']:.4f} (-{conv['loss_reduction_pct']:.2f}% reduction)")
+    print(f"• Convergence Status:        {'✔ Cleanly Converged & Plateaued' if conv['has_plateaued'] else 'Iterating'}")
+    print("• Loss History by Epoch:    " + " -> ".join([f"E{e['epoch']}:{e['loss']:.3f}" for e in conv['loss_curve']]))
+    print("-" * 96)
+
+    print("\n📊 2. AGGREGATE MODEL PERFORMANCE (CROSS-SEED MEAN ± STD):")
     print("-" * 96)
     print(f"{'Feature Configuration':<35} | {'PR-AUC (Mean ± Std)':<22} | {'Seed 42 PR-AUC':<16} | {'PR-AUC Range':<16}")
     print("-" * 96)
@@ -176,10 +211,10 @@ def main():
     mean_pr_str = f"{agg['mean_pr_auc']:.4f} ± {agg['std_pr_auc']:.4f}"
     seed42_pr_str = f"{results['results_per_seed'][0]['pr_auc']:.4f}"
     range_pr_str = f"{agg['min_pr_auc']:.4f} - {agg['max_pr_auc']:.4f}"
-    print(f"{'3. With Graph (437 Features)':<35} | {mean_pr_str:<22} | {seed42_pr_str:<16} | {range_pr_str:<16}")
+    print(f"{'3. Baseline + Geo + Graph (445 Feats)':<35} | {mean_pr_str:<22} | {seed42_pr_str:<16} | {range_pr_str:<16}")
     print("-" * 96)
 
-    print("\n🚦 2. OPERATIONAL TRIAGE GATEWAY COMPARISON (CROSS-SEED MEAN & RANGE):")
+    print("\n🚦 3. OPERATIONAL TRIAGE GATEWAY COMPARISON (CROSS-SEED MEAN & RANGE):")
     print("-" * 96)
     print(f"{'Feature Configuration':<32} | {'Auto-Blocked Frauds':<22} | {'Net Contained (85%)':<22} | {'Leaked Frauds':<16}")
     print("-" * 96)
@@ -189,7 +224,7 @@ def main():
     blk_str = f"{agg['mean_auto_blocked']:.1f} ({agg['min_auto_blocked']} - {agg['max_auto_blocked']})"
     net_str = f"{agg['mean_net_contained']:.1f} ({agg['mean_net_contained']/4064*100:.2f}%)"
     leak_str = f"{agg['mean_leaked_fraud']:.1f} ({agg['mean_leaked_fraud']/4064*100:.2f}%)"
-    print(f"{'3. With Graph (437 Features)':<32} | {blk_str:<22} | {net_str:<22} | {leak_str:<16}")
+    print(f"{'3. Baseline + Geo + Graph (445 Feats)':<32} | {blk_str:<22} | {net_str:<22} | {leak_str:<16}")
     print("-" * 96)
 
     print("\n📁 GENERATED ARTIFACTS:")
