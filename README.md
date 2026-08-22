@@ -45,9 +45,12 @@ Evaluated strictly on the held-out chronological test split (**118,108 transacti
 
 | Model | PR-AUC (Primary Metric) | ROC-AUC | Precision (at 0.5) | Recall (at 0.5) | Brier Score Loss (Calibration) |
 |---|---|---|---|---|---|
-| **Baseline (Logistic Regression)** | `0.1834` | `0.8310` | `12.67%` | `69.24%` | `0.0682` |
-| **LightGBM Classifier** | `0.4900` *(+0.3065)* | `0.8901` | `81.64%` | `30.95%` | `0.0238` |
-| **XGBoost GBDT (Primary)** | **`0.5149`** *(+0.3315)* | **`0.8975`** | **`81.08%`** | **`30.78%`** | **`0.0224`** |
+| **Baseline (Logistic Regression)** | `0.1834` | `0.8311` | `12.60%` | `69.46%` | `0.0682` |
+| **LightGBM Classifier** | `0.4784` *(+0.2950)* | `0.8907` | `80.18%` | `30.46%` | `0.0238` |
+| **XGBoost GBDT (Primary, 429 feats)** | **`0.5121`** *(+0.3287)* | **`0.8967`** | **`81.50%`** | **`31.32%`** | **`0.0225`** |
+
+> [!NOTE]
+> **Geo Feature Impact (427 $\to$ 429 Features)**: Adding leak-free geo-mismatch tracking (`is_addr_mismatch_from_card_history` & `card_prior_distinct_addr_count`) maintained ranking performance (`PR-AUC 0.5121`, `ROC-AUC 0.8967`) while boosting **Auto-Blocked Fraud from 831 $\to$ 943 cases (+13.5% automated catch)** and raising **Net Contained Fraud from 46.17% $\to$ 46.78% (+24.4 net fraud cases stopped)** under the identical 3.0% review team budget.
 
 ---
 
@@ -57,19 +60,19 @@ Rather than cherry-picking an uncalibrated default 0.5 cutoff, the pipeline swee
 
 ```
 Decision Threshold Sweep Spectrum:
-0.001 ──→ 0.010 [Theoretical Limit] ──→ 0.100 ──→ 0.200 [Primary Ship] ──→ 0.300 [Balanced F1] ──→ 0.800 [VIP] ──→ 0.950
+0.001 ──→ 0.010 [Theoretical Limit] ──→ 0.100 ──→ 0.190 [Primary Ship] ──→ 0.300 [Balanced F1] ──→ 0.800 [VIP] ──→ 0.950
 ```
 
 | Policy Profile | Operating Threshold ($\tau$) | Catch Rate (Recall) | Precision | False Positives per True Catch ($\text{FP}/\text{TP}$) | Flagged Volume | Auto-Approved Volume | Strategic Intent & Operational Context |
 |---|---|---|---|---|---|---|---|
-| 🌟 **Production Policy** *(Capacity-Constrained)* | **`0.200`** | **`44.86%`** *(1,823 caught)* | **`54.89%`** | **`0.82`** *(>1.2 true catches / 1 FP)* | **`2.81%`** *(3,321 txns)* | **`97.19%`** | **RECOMMENDED PRIMARY SHIP CANDIDATE.** Designed for fixed enterprise risk teams with a $\le 3.0\%$ review headcount budget. Captures 45% of fraud with more true catches than false alarms. |
-| 🟢 **Balanced Policy** *(Optimal F1 / Queue Defense)* | **`0.300`** | **`38.83%`** | **`67.81%`** | **`0.47`** *(>2 true catches / 1 FP)* | `1.97%` | **`98.03%`** | Standard production baseline maximizing harmonic F1 (`0.4938`); flags <2% of traffic. *Optimizes classification balance and queue protection, accepting higher missed chargebacks than the Primary Ship policy.* |
-| 🔴 **Conservative Policy** *(Minimal Friction VIP)* | **`0.800`** | **`20.20%`** | **`90.82%`** | **`0.10`** *(10 true catches / 1 FP)* | `0.77%` | **`99.23%`** | Ultra-low customer friction; 90.8% precision with near-zero false alarms for frictionless VIP checkout conversion. |
-| ⚠️ **Theoretical Ceiling** *(Unconstrained Math Limit)* | **`0.010`** | **`94.78%`** | `6.30%` | `14.87` | `51.75%` *(61k reviews)* | `48.25%` | **THEORETICAL UPPER BOUND (NOT SHIPPED).** Mathematical peak of unconstrained formula (+\$529.1k). Unviable for live deployment without massive reviewer headcount. |
+| 🌟 **Production Policy** *(Capacity-Constrained)* | **`0.190`** | **`45.74%`** *(1,859 caught)* | **`53.31%`** | **`0.88`** *(>1.1 true catches / 1 FP)* | **`2.95%`** *(3,487 txns)* | **`97.05%`** | **RECOMMENDED PRIMARY SHIP CANDIDATE.** Designed for fixed enterprise risk teams with a $\le 3.0\%$ review headcount budget. Captures 45.7% of fraud with more true catches than false alarms. |
+| 🟢 **Balanced Policy** *(Optimal F1 / Queue Defense)* | **`0.300`** | **`39.15%`** | **`67.13%`** | **`0.49`** *(>2 true catches / 1 FP)* | `2.01%` | **`97.99%`** | Standard production baseline maximizing harmonic F1 (`0.4946`); flags <2% of traffic. *Optimizes classification balance and queue protection, accepting higher missed chargebacks than the Primary Ship policy.* |
+| 🔴 **Conservative Policy** *(Minimal Friction VIP)* | **`0.800`** | **`20.57%`** | **`91.17%`** | **`0.10`** *(10 true catches / 1 FP)* | `0.78%` | **`99.22%`** | Ultra-low customer friction; 91.2% precision with near-zero false alarms for frictionless VIP checkout conversion. |
+| ⚠️ **Theoretical Ceiling** *(Unconstrained Math Limit)* | **`0.010`** | **`95.10%`** | `6.10%` | `15.39` | `53.64%` *(63k reviews)* | `46.36%` | **THEORETICAL UPPER BOUND (NOT SHIPPED).** Mathematical peak of unconstrained formula (+\$529.1k). Unviable for live deployment without massive reviewer headcount. |
 
 > [!NOTE]
 > **Stated Operational Cost Assumptions & Sensitivity**:
-> - **Manual Review Cost**: Assumed at **\$5.00** per flagged case (industry benchmark for 3–5 min analyst triage). Sensitivity sweep (\$2 $\to$ \$15) confirms stability: under capacity constraints, the operating point remains firmly anchored at $\tau \approx 0.19 - 0.20$.
+> - **Manual Review Cost**: Assumed at **\$5.00** per flagged case (industry benchmark for 3–5 min analyst triage). Sensitivity sweep (\$2 $\to$ \$15) confirms stability: under capacity constraints, the operating point remains firmly anchored at $\tau \approx 0.190$.
 > - **Chargeback Loss Multiplier**: Assumed at **1.5x** the transaction dollar amount (goods loss + merchant penalty fees).
 
 ---
@@ -87,31 +90,33 @@ Decision Threshold Sweep Spectrum:
 ### 2. Feature Engineering & Preprocessing Engine
 * **Identity Proxies**:
   - **Card Proxy**: Synthesized from `card1 + card2 + card3 + card4 + card5 + card6 + addr1 + addr2`.
+  - **Pure Card Instrument Proxy**: Synthesized from `card1 + card2 + card3 + card4 + card5 + card6`.
   - **Device Proxy**: Synthesized from `DeviceType + DeviceInfo + id_30 + id_31` *(Note: `DeviceInfo` is ~70% null in IEEE-CIS; unlinked recency cleanly defaults to `-1.0` as an informative signal)*.
 * **Leakage Safeguards**:
   - **Expanding Cumulative Card Mean**: `amt_to_expanding_card_mean_ratio` computes the ratio against the cumulative average up to $t-1$, eliminating intra-train lookahead leakage.
-  - **Continuous Streaming State**: `StreamingRiskState` seamlessly carries 10m/1h/24h rolling velocity counters across the train/test boundary, eliminating test cold-start artifacts.
-* **Feature Set**: `427` model-ready numeric and label-encoded features.
+  - **Streaming Geo-Mismatch & Multi-Region Tracking**: `is_addr_mismatch_from_card_history` and `card_prior_distinct_addr_count` evaluate card location consistency strictly against historical regions up to $t-1$.
+  - **Continuous Streaming State**: `StreamingRiskState` seamlessly carries 10m/1h/24h rolling velocity counters and geo history across the train/test boundary, eliminating test cold-start artifacts.
+* **Feature Set**: `429` model-ready numeric and label-encoded features.
 
 ---
 
 ### 3. Gradient-Boosted Classifiers (XGBoost & LightGBM)
 * **Execution**: Trains `XGBoost` and `LightGBM` GBDTs alongside a `LogisticRegression` baseline.
 ### 4. Evaluation & Honesty Layer
-* Implements multi-threshold sweeping ($0.001 \to 0.950$), probability calibration verification (Brier score: `0.0224`), dollar capture curves, cost sensitivity sweeps (\$2 $\to$ \$15), and the structured "What Didn't Work" registry.
+* Implements multi-threshold sweeping ($0.001 \to 0.950$), probability calibration verification (Brier score: `0.0225`), dollar capture curves, cost sensitivity sweeps (\$2 $\to$ \$15), and the structured "What Didn't Work" registry.
 
 ---
 
 ### 5. SHAP Explainability + Gray-Zone Triage Gateway
 * **Grounded 3-Way Triage Gateway**:
-  - 🟢 **Auto-Approve (`score < 0.150`)**: **`113,756` transactions (`96.32%` of volume)** approved instantly with zero customer friction. *Leakage: `2,003` missed frauds (`49.3%` of test fraud, `1.761%` leakage rate).*
-  - 🟡 **Manual Review / Gray-Zone (`0.150 <= score < 0.790`)**: **`3,434` transactions (`2.91%` of volume)** routed to the human triage queue, strictly satisfying the $\le 3.0\%$ operational capacity constraint (3,543 cases) and flagging **`1,230` frauds** (`30.3%` of test fraud, `35.82%` queue precision, `1.79` FP/TP).
-  - 🔴 **Auto-Block (`score >= 0.790`)**: **`918` transactions (`0.78%` of volume)** automatically blocked with verified **`90.52%` precision** (stopping **`831` frauds**, `20.4%` of test fraud, `87` false blocks).
+  - 🟢 **Auto-Approve (`score < 0.145`)**: **`113,649` transactions (`96.22%` of volume)** approved instantly with zero customer friction. *Leakage: `1,994` missed frauds (`49.1%` of test fraud, `1.755%` leakage rate).*
+  - 🟡 **Manual Review / Gray-Zone (`0.145 <= score < 0.740`)**: **`3,414` transactions (`2.89%` of volume)** routed to the human triage queue, strictly satisfying the $\le 3.0\%$ operational capacity constraint (3,543 cases) and flagging **`1,127` frauds** (`27.7%` of test fraud, `33.01%` queue precision, `2.03` FP/TP).
+  - 🔴 **Auto-Block (`score >= 0.740`)**: **`1,045` transactions (`0.88%` of volume)** automatically blocked with verified **`90.24%` precision** (stopping **`943` frauds**, `23.2%` of test fraud, `102` false blocks).
   - 🛡️ **Containment Metrics**:
-    - **Gross Interception Rate**: **`50.71%` (`2,061` / `4,064` frauds)** flagged or blocked *(assumes 100% human analyst resolution on flagged batch)*.
-    - **Net Contained Fraud (Discounted)**: **`46.17%` (`1,876.5` / `4,064` frauds)** stopped *(accounting for a realistic 85% analyst resolution efficiency on the manual review queue)*.
+    - **Gross Interception Rate**: **`50.94%` (`2,070` / `4,064` frauds)** flagged or blocked *(assumes 100% human analyst resolution on flagged batch)*.
+    - **Net Contained Fraud (Discounted)**: **`46.78%` (`1,900.9` / `4,064` frauds)** stopped *(accounting for a realistic 85% analyst resolution efficiency on the manual review queue)*.
 * **Opaque Feature Transparency Protocol**:
-  - Plain-language audit reasons are strictly derived from our **20 verified, engineered domain features** without asserting unverified semantic narratives for raw/undocumented variables.
+  - Plain-language audit reasons are strictly derived from our **20+ verified, engineered domain features** without asserting unverified semantic narratives for raw/undocumented variables.
   - Attaches an explicit **Opaque Signal Contribution metric** disclosing when decisions are heavily weighted by Vesta's undisclosed proprietary features (`V1`–`V339`).
 
 ---
