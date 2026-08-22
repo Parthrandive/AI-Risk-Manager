@@ -50,7 +50,12 @@ Evaluated strictly on the held-out chronological test split (**118,108 transacti
 | **XGBoost GBDT (Primary, 429 feats)** | **`0.5121`** *(+0.3287)* | **`0.8967`** | **`81.50%`** | **`31.32%`** | **`0.0225`** |
 
 > [!NOTE]
-> **Geo Feature Impact (427 $\to$ 429 Features)**: Adding leak-free geo-mismatch tracking (`is_addr_mismatch_from_card_history` & `card_prior_distinct_addr_count`) maintained ranking performance (`PR-AUC 0.5121`, `ROC-AUC 0.8967`) while boosting **Auto-Blocked Fraud from 831 $\to$ 943 cases (+13.5% automated catch)** and raising **Net Contained Fraud from 46.17% $\to$ 46.78% (+24.4 net fraud cases stopped)** under the identical 3.0% review team budget.
+> **Geo Feature Impact & Operating-Point Divergence (427 $\to$ 429 Features)**:
+> - **Aggregate Metric**: Deterministic global PR-AUC shifted from `0.5149` to `0.5121` ($\Delta = -0.0028$). This minor global dip occurs entirely in the uncalibrated low-score tail ($\tau < 0.15$), where precision shifted slightly from $3.28\% \to 3.20\%$ across tens of thousands of auto-approved transactions the human review queue never touches.
+> - **Operational Operating Points**: At the two specific calibrated operating thresholds where the triage gateway actually acts, geo features improve decision certainty:
+>   - **Auto-Blocked Fraud**: Jumped from **`831` $\to$ `943` frauds (+13.5% automated catch)** at verified $\ge 90\%$ precision ($\tau_{\text{high}} = 0.740$).
+>   - **Net Contained Fraud**: Lifted from **`46.17%` $\to$ `46.78%` (+24.4 net fraud cases saved)** under the identical 3.0% review headcount budget.
+>   - **Auto-Approve Leakage**: Decreased from **`2,003` $\to$ `1,994` missed frauds** (`1.755%` leakage rate).
 
 ---
 
