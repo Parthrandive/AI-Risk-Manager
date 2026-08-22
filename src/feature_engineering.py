@@ -36,7 +36,8 @@ DEVICE_ID_COLS = ["DeviceType", "DeviceInfo", "id_30", "id_31"]
 class StreamingRiskState:
     """
     Maintains time-ordered streaming state for rolling velocities, recency,
-    and expanding card statistics across train and test temporal boundaries.
+    expanding card statistics, and historical geographic region tracking
+    across train and test temporal boundaries.
     """
 
     def __init__(self):
@@ -50,6 +51,10 @@ class StreamingRiskState:
         self.card_expanding_stats: Dict[str, Tuple[float, int]] = {}
         # Global expanding stats: (cumulative_amount, transaction_count)
         self.global_expanding_stats: Tuple[float, int] = (0.0, 0)
+        # Maps pure_card_proxy -> Dict[str, int] (address string -> count) seen up to t-1
+        self.card_seen_addrs: Dict[str, Dict[str, int]] = {}
+        # Maps pure_card_proxy -> most frequent prior address string up to t-1
+        self.card_most_common_addr: Dict[str, str] = {}
 
 
 class RiskFeaturePipeline:
@@ -97,6 +102,19 @@ class RiskFeaturePipeline:
     def create_card_proxy(df: pd.DataFrame) -> pd.Series:
         """Constructs canonical card/account proxy: card1-card6 + addr1-addr2."""
         cols_present = [c for c in CARD_ID_COLS if c in df.columns]
+        if not cols_present:
+            return pd.Series("CARD_UNKNOWN", index=df.index)
+        
+        card_series = df[cols_present[0]].fillna("NA").astype(str)
+        for c in cols_present[1:]:
+            card_series = card_series + "_" + df[c].fillna("NA").astype(str)
+        return card_series
+
+    @staticmethod
+    def create_pure_card_proxy(df: pd.DataFrame) -> pd.Series:
+        """Constructs pure card instrument proxy without address: card1-card6."""
+        pure_cols = ["card1", "card2", "card3", "card4", "card5", "card6"]
+        cols_present = [c for c in pure_cols if c in df.columns]
         if not cols_present:
             return pd.Series("CARD_UNKNOWN", index=df.index)
         
@@ -167,8 +185,12 @@ class RiskFeaturePipeline:
         df = df.sort_values(by=self.time_col, ascending=True).reset_index(drop=True)
         
         card_list = self.create_card_proxy(df).tolist()
+        pure_card_list = self.create_pure_card_proxy(df).tolist()
         device_list = self.create_device_proxy(df).tolist()
         
+        addr1_list = df["addr1"].fillna("NA").astype(str).tolist() if "addr1" in df.columns else ["NA"] * len(df)
+        addr2_list = df["addr2"].fillna("NA").astype(str).tolist() if "addr2" in df.columns else ["NA"] * len(df)
+
         time_s = df[self.time_col].values
         amt_s = df[self.amt_col].fillna(self.global_amt_median).values if self.amt_col in df.columns else np.zeros(len(df))
 
@@ -180,6 +202,8 @@ class RiskFeaturePipeline:
         card_count_24h = np.zeros(n, dtype=np.int32)
         card_amt_sum_24h = np.zeros(n, dtype=np.float32)
         amt_to_card_expanding_ratio = np.ones(n, dtype=np.float32)
+        card_prior_distinct_addr_count = np.zeros(n, dtype=np.int32)
+        is_addr_mismatch_from_card_history = np.zeros(n, dtype=np.int8)
 
         st = self.state
 
@@ -187,7 +211,11 @@ class RiskFeaturePipeline:
             t = float(time_s[i])
             amt = float(amt_s[i])
             card = card_list[i]
+            p_card = pure_card_list[i]
             dev = device_list[i]
+            a1 = addr1_list[i]
+            a2 = addr2_list[i]
+            curr_addr = f"{a1}_{a2}"
 
             # 1. Recency
             if card in st.last_card_time:
@@ -210,7 +238,20 @@ class RiskFeaturePipeline:
             else:
                 amt_to_card_expanding_ratio[i] = 1.0
 
-            # 3. Rolling Velocity windows (last 10m=600s, 1h=3600s, 24h=86400s)
+            # 3. Geo-Mismatch & Multi-Region Tracking (Strictly up to t-1, zero lookahead leakage)
+            if p_card in st.card_seen_addrs and len(st.card_seen_addrs[p_card]) > 0:
+                addr_dict = st.card_seen_addrs[p_card]
+                card_prior_distinct_addr_count[i] = len(addr_dict)
+                most_common_addr = st.card_most_common_addr.get(p_card, None)
+                if curr_addr != "NA_NA" and most_common_addr is not None and curr_addr != most_common_addr:
+                    is_addr_mismatch_from_card_history[i] = 1
+                else:
+                    is_addr_mismatch_from_card_history[i] = 0
+            else:
+                card_prior_distinct_addr_count[i] = 0
+                is_addr_mismatch_from_card_history[i] = 0
+
+            # 4. Rolling Velocity windows (last 10m=600s, 1h=3600s, 24h=86400s)
             if card not in st.card_history:
                 st.card_history[card] = []
             
@@ -253,7 +294,18 @@ class RiskFeaturePipeline:
                 g_cum, g_cnt = st.global_expanding_stats
                 st.global_expanding_stats = (g_cum + amt, g_cnt + 1)
 
-        # Attach engineered velocity and behavioral features
+                # Update geo history
+                if curr_addr != "NA_NA":
+                    if p_card not in st.card_seen_addrs:
+                        st.card_seen_addrs[p_card] = {}
+                    st.card_seen_addrs[p_card][curr_addr] = st.card_seen_addrs[p_card].get(curr_addr, 0) + 1
+                    
+                    curr_cnt = st.card_seen_addrs[p_card][curr_addr]
+                    prev_best_addr = st.card_most_common_addr.get(p_card, None)
+                    if prev_best_addr is None or curr_cnt > st.card_seen_addrs[p_card].get(prev_best_addr, 0):
+                        st.card_most_common_addr[p_card] = curr_addr
+
+        # Attach engineered velocity, behavioral, and geo features
         df["time_since_last_txn_card"] = time_since_last_card
         df["time_since_last_txn_device"] = time_since_last_device
         df["card_txn_count_10m"] = card_count_10m
@@ -261,6 +313,8 @@ class RiskFeaturePipeline:
         df["card_txn_count_24h"] = card_count_24h
         df["card_amt_sum_24h"] = card_amt_sum_24h
         df["amt_to_expanding_card_mean_ratio"] = amt_to_card_expanding_ratio
+        df["card_prior_distinct_addr_count"] = card_prior_distinct_addr_count
+        df["is_addr_mismatch_from_card_history"] = is_addr_mismatch_from_card_history
 
         # 4. Amount representations
         if self.amt_col in df.columns:

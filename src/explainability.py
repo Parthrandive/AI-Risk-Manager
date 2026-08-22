@@ -31,8 +31,15 @@ INTERPRETABLE_FEATURES = {
     "card_count_1h",
     "card_count_24h",
     "card_amt_sum_24h",
+    "card_txn_count_10m",
+    "card_txn_count_1h",
+    "card_txn_count_24h",
+    "time_since_last_txn_card",
+    "time_since_last_txn_device",
     "time_since_last_card",
     "time_since_last_device",
+    "card_prior_distinct_addr_count",
+    "is_addr_mismatch_from_card_history",
     "is_same_email_domain",
     "is_high_risk_email",
     "TransactionAmt",
@@ -150,17 +157,25 @@ class RiskExplainerGateway:
             if value >= 3 and shap_val > 0:
                 return f"Hourly velocity surge: {int(value)} transactions on card in the last 1 hour."
         
-        elif feature_name == "card_count_24h":
+        elif feature_name in {"card_count_24h", "card_txn_count_24h"}:
             if value >= 5 and shap_val > 0:
                 return f"Elevated 24h card volume: {int(value)} transactions on card in the last 24 hours."
 
-        elif feature_name == "time_since_last_card":
+        elif feature_name == "is_addr_mismatch_from_card_history":
+            if value == 1 and shap_val > 0:
+                return "Geographic region mismatch: Transaction address differs from card's historical primary region."
+
+        elif feature_name == "card_prior_distinct_addr_count":
+            if value >= 3 and shap_val > 0:
+                return f"Multi-region usage anomaly: Card previously observed across {int(value)} distinct address regions."
+
+        elif feature_name in {"time_since_last_card", "time_since_last_txn_card"}:
             if 0 <= value < 60 and shap_val > 0:
                 return f"Rapid repeat card usage: Only {int(value)} seconds since previous card transaction."
             elif value == -1.0 and shap_val > 0:
                 return "First-time observed card proxy (no prior transaction history on instrument)."
 
-        elif feature_name == "time_since_last_device":
+        elif feature_name in {"time_since_last_device", "time_since_last_txn_device"}:
             if 0 <= value < 60 and shap_val > 0:
                 return f"Rapid repeat device usage: {int(value)} seconds since previous device transaction."
 
