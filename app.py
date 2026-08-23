@@ -136,19 +136,19 @@ model, explainer, feature_cols, test_df = load_production_pipeline()
 
 
 def get_override_log():
-    """Load or initialize analyst override audit log with initial baseline seeds."""
+    """Load or initialize analyst override audit log with transparently labeled baseline seeds."""
     if os.path.exists(OVERRIDE_LOG_PATH):
         try:
             return pd.read_csv(OVERRIDE_LOG_PATH)
         except Exception:
             pass
-    # Initialize with realistic baseline audit records (all upheld to establish a clean 0% baseline)
+    # Initialize with realistic baseline audit records (explicitly disclosed as demo calibration seeds)
     initial_data = [
-        {"timestamp": "2026-08-23T11:15:00Z", "transaction_id": 3459102, "risk_score": 0.3120, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Routine model verdict confirmation without anomaly", "is_override": 0},
-        {"timestamp": "2026-08-23T11:42:00Z", "transaction_id": 3459288, "risk_score": 0.2840, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Velocity burst confirmed as authorized business expense", "is_override": 0},
-        {"timestamp": "2026-08-23T12:05:00Z", "transaction_id": 3459340, "risk_score": 0.3410, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Verified address consistency across transaction history", "is_override": 0},
-        {"timestamp": "2026-08-23T12:30:00Z", "transaction_id": 3459411, "risk_score": 0.2210, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Routine model verdict confirmation without anomaly", "is_override": 0},
-        {"timestamp": "2026-08-23T12:55:00Z", "transaction_id": 3459489, "risk_score": 0.2650, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Cardholder identity confirmed via secondary OTP step-up", "is_override": 0},
+        {"timestamp": "2026-08-23T11:15:00Z", "transaction_id": 3459102, "risk_score": 0.3120, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Routine model verdict confirmation without anomaly", "is_override": 0, "source": "[Demo Seed]"},
+        {"timestamp": "2026-08-23T11:42:00Z", "transaction_id": 3459288, "risk_score": 0.2840, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Velocity burst confirmed as authorized business expense", "is_override": 0, "source": "[Demo Seed]"},
+        {"timestamp": "2026-08-23T12:05:00Z", "transaction_id": 3459340, "risk_score": 0.3410, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Verified address consistency across transaction history", "is_override": 0, "source": "[Demo Seed]"},
+        {"timestamp": "2026-08-23T12:30:00Z", "transaction_id": 3459411, "risk_score": 0.2210, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Routine model verdict confirmation without anomaly", "is_override": 0, "source": "[Demo Seed]"},
+        {"timestamp": "2026-08-23T12:55:00Z", "transaction_id": 3459489, "risk_score": 0.2650, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Cardholder identity confirmed via secondary OTP step-up", "is_override": 0, "source": "[Demo Seed]"},
     ]
     df = pd.DataFrame(initial_data)
     df.to_csv(OVERRIDE_LOG_PATH, index=False)
@@ -156,7 +156,7 @@ def get_override_log():
 
 
 def save_override_action(txn_id, risk_score, model_dec, analyst_action, final_dec, reason):
-    """Append a human analyst override decision to the audit log."""
+    """Append a live human analyst override decision to the audit log."""
     log_df = get_override_log()
     is_override = int(analyst_action != "Uphold Model Verdict")
     new_entry = pd.DataFrame([{
@@ -167,7 +167,8 @@ def save_override_action(txn_id, risk_score, model_dec, analyst_action, final_de
         "analyst_action": analyst_action,
         "final_decision": final_dec,
         "analyst_reason": reason,
-        "is_override": is_override
+        "is_override": is_override,
+        "source": "Live Analyst Session"
     }])
     updated_df = pd.concat([log_df, new_entry], ignore_index=True)
     updated_df.to_csv(OVERRIDE_LOG_PATH, index=False)
@@ -200,6 +201,9 @@ with st.sidebar:
         help="Transactions with risk >= τ_high are automatically blocked (≥90% verified precision floor, clamped at 1.000 max)."
     )
 
+    if tau_low >= tau_high:
+        st.error("⚠️ **Threshold Inversion Error**: τ_low must be strictly less than τ_high.")
+
     explainer.tau_low = tau_low
     explainer.tau_high = tau_high
 
@@ -214,13 +218,12 @@ with st.sidebar:
     col_s1.metric("Adjudicated", f"{total_reviews:,}")
     col_s2.metric("Override %", f"{override_rate:.1f}%")
 
-    if total_reviews >= 3:
-        if override_rate > 15.0:
-            st.warning(f"⚠️ **Drift Alert**: Override rate ({override_rate:.1f}%) exceeds 15% threshold! Triggering behavioral drift inspection.")
-        else:
-            st.success(f"✔ **Drift Status**: Normal ({override_rate:.1f}% ≤ 15% threshold).")
+    if total_reviews == 0:
+        st.info("ℹ️ **Drift Status**: Awaiting initial adjudications (0 cases).")
+    elif override_rate > 15.0:
+        st.warning(f"⚠️ **Drift Alert**: Override rate ({override_rate:.1f}%) exceeds 15% threshold! Triggering behavioral drift inspection.")
     else:
-        st.info("ℹ️ **Drift Status**: Initializing baseline telemetry (<3 cases).")
+        st.success(f"✔ **Drift Status**: Normal ({override_rate:.1f}% ≤ 15% threshold).")
 
     st.markdown("---")
     st.markdown("### ⚡ Live System Specs")
@@ -306,6 +309,10 @@ elif "Raw Transaction JSON" in selected_mode:
 # -------------------------------------------------------------
 st.markdown("---")
 st.markdown("#### 2. Live Decision Gateway & SHAP Audit Card")
+
+if tau_low >= tau_high:
+    st.error(f"⚠️ **Invalid Gateway Configuration**: Auto-Approve Cutoff (τ_low = {tau_low:.3f}) must be strictly less than Auto-Block Floor (τ_high = {tau_high:.3f}). Please adjust the sidebar thresholds to restore valid 3-lane triage routing.")
+    st.stop()
 
 # 1. Pure Model Scoring (Sub-Millisecond XGBoost Booster Inference)
 x_np = pd.to_numeric(active_row[feature_cols], errors="coerce").values.astype(np.float32).reshape(1, -1)
@@ -447,6 +454,7 @@ with col_a3:
 
 # Display Recent Override Audit Table
 st.markdown("##### 📋 Recent Analyst Adjudication Audit Trail")
+st.caption("ℹ️ *Pre-seeded with 5 baseline historical review records for initial calibration (labeled `[Demo Seed]`). Live user submissions will appear with source `Live Analyst Session`.*")
 current_log = get_override_log()
 if len(current_log) > 0:
     st.dataframe(
