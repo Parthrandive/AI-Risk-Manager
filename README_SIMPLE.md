@@ -337,7 +337,7 @@ To ensure the AI treats all legitimate shoppers fairly without bias:
 
 ---
 
-## 🏃 Quickstart: Run & Test in 3 Simple Steps
+## 🏃 Quickstart: Run & Test in 4 Simple Steps
 
 ### Step 1: Install Requirements
 ```bash
@@ -355,7 +355,13 @@ python3 scripts/run_layer4.py  # Sweeps optimal business thresholds
 python3 scripts/run_layer5.py  # Runs the 3-Lane Traffic Light Gateway
 ```
 
-### Step 3: Run the Automated Verification Suite
+### Step 3: Launch the Interactive Live Demo & Analyst Console
+```bash
+streamlit run app.py
+```
+* *Explore real-time scoring, click pre-loaded transactions from all 3 traffic lanes, test custom card amounts, and submit human analyst overrides with live drift telemetry!*
+
+### Step 4: Run the Automated Verification Suite
 ```bash
 python3 -m pytest
 # ✔ 33 tests passed in 2.5 seconds!

@@ -300,7 +300,13 @@ pip install -r requirements.txt
    python3 scripts/run_graph_ablation.py
    ```
 
-3. **Run Automated Test Suite**:
+3. **Launch Interactive Streamlit Live Demo & Analyst Console**:
+   ```bash
+   streamlit run app.py
+   ```
+   * *Features*: Real-time sub-millisecond transaction scoring, 3-lane gateway visualization, local SHAP force factors, evidence trail inspection, and human-in-the-loop analyst override logging with live behavioral drift telemetry.
+
+4. **Run Automated Test Suite**:
    ```bash
    python3 -m pytest
    ```
