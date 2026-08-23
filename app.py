@@ -129,6 +129,14 @@ def load_production_pipeline():
         tau_high=0.740
     )
 
+    # Warm up OpenMP thread pool & CPU memory cache for instantaneous sub-millisecond scoring
+    dummy_np = pd.to_numeric(test_df[feature_cols].iloc[0], errors="coerce").values.astype(np.float32).reshape(1, -1)
+    dummy_dmat = xgb.DMatrix(dummy_np, feature_names=feature_cols)
+    booster = model.get_booster() if hasattr(model, "get_booster") else model
+    for _ in range(10):
+        _ = booster.predict(dummy_dmat)
+    _ = booster.predict(dummy_dmat, pred_contribs=True)
+
     return model, explainer, feature_cols, test_df
 
 
@@ -221,9 +229,16 @@ with st.sidebar:
     if total_reviews == 0:
         st.info("ℹ️ **Drift Status**: Awaiting initial adjudications (0 cases).")
     elif override_rate > 15.0:
-        st.warning(f"⚠️ **Drift Alert**: Override rate ({override_rate:.1f}%) exceeds 15% threshold! Triggering behavioral drift inspection.")
+        st.warning(
+            f"⚠️ **Drift Alert**: Override rate ({override_rate:.1f}%) exceeds 15% threshold! Triggering behavioral drift inspection.",
+            icon="⚠️"
+        )
     else:
-        st.success(f"✔ **Drift Status**: Normal ({override_rate:.1f}% ≤ 15% threshold).")
+        st.success(
+            f"✔ **Drift Status**: Normal ({override_rate:.1f}% ≤ 15% threshold).",
+            icon="✅"
+        )
+    st.caption("ℹ️ *Demo Sensitivity Note: Real-time reactive telemetry without volume gating. In production, this trigger operates alongside distribution PSI.*")
 
     st.markdown("---")
     st.markdown("### ⚡ Live System Specs")
