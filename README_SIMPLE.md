@@ -88,18 +88,16 @@ Incoming Payment ──▶ [1. Clean & Sort] ──▶ [2. Smart Clues] ──�
 
 ---
 
-## 🏆 The Scorecard & Benchmark Against Published Academic Research
+## 🏆 The Scorecard & SOTA Benchmark (Formula 1 vs. Production Car)
 
 We evaluated our primary model across 5 independent runs on **118,108 held-out future transactions** (containing 4,064 real fraud attacks):
 
-| AI Architecture | PR-AUC ("Needle in a Haystack" Score) | ROC-AUC | Precision (Accuracy when flagging) | Calibration Brier Loss (Honesty Score) |
+| AI Architecture | 5-Run PR-AUC ("Needle in a Haystack" Score) | ROC-AUC | Precision (Accuracy when flagging) | Calibration Brier Loss (Honesty Score) |
 |---|---|---|---|---|
 | **Simple Baseline (Logistic Regression)** | `0.1834` | `0.8311` | `12.60%` | `0.0682` |
-| *Published Academic Baseline (arXiv:1911.02613, Logistic Regression)* | *`0.1677`* | *`0.8153`* | *N/A* | *N/A* |
 | **LightGBM Classifier** | `0.4784` *(+0.2950)* | `0.8907` | `80.18%` | `0.0238` |
-| *Published Academic Benchmark (arXiv:1911.02613, XGBoost GBDT)* | *`0.4692`* | *`0.8699`* | *N/A* | *N/A* |
-| **XGBoost Primary Champion (429 Clues)** | **`0.5111 ± 0.0031`** *(+0.0419 vs arXiv)* | **`0.8967 ± 0.0012`** *(+0.0268 vs arXiv)* | **`81.50%`** | **`0.0225`** *(Best)* |
-| *Kaggle Competition Top Leaderboard (Offline 50-Model Stacking)* | *N/A (Scored on ROC-AUC only)* | *`0.9600 – 0.9800`* | *N/A* | *N/A* |
+| **XGBoost Primary Champion (429 Clues)** | **`0.5111 ± 0.0031`** *(0.5071 – 0.5164)* | **`0.8967 ± 0.0012`** | **`81.50%`** | **`0.0225`** *(Best)* |
+| *Kaggle Competition Top Leaderboard (Offline SOTA)* | *N/A (Scored on ROC-AUC only)* | *`0.9600 – 0.9800`* | *N/A (Multi-model ensemble)* | *N/A* |
 
 ### 🏎️ Why is the Kaggle Score 0.96 while our Real-Time Score is 0.8967?
 * **The Kaggle Leaderboard (0.96–0.98 ROC-AUC)** was built like a **Formula 1 Prototype**:
@@ -109,7 +107,7 @@ We evaluated our primary model across 5 independent runs on **118,108 held-out f
 * **AI Risk Manager (0.8967 ROC-AUC / 0.5111 PR-AUC)** is built like a **High-Performance Production Sports Car**:
   - It makes decisions in **0.30 milliseconds (over 3,000 transactions/second/core)** during live checkout!
   - It strictly respects the timeline: it only knows what happened in the past ($t-1$).
-  - It beats published peer-reviewed research papers (`0.4692` PR-AUC on the identical dataset) by **`+8.9%`**, while providing instant human explainability.
+  - It outputs human-readable audit cards so investigators know exactly why a card was blocked.
 
 ---
 

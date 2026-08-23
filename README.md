@@ -43,23 +43,19 @@ Approve   Review      Block
 
 Evaluated strictly on the held-out chronological test split (**118,108 transactions**, 4,064 true frauds, **3.441% test fraud rate**):
 
-### 1. Model Performance vs. Baseline & Published Academic Benchmarks
+### 1. Model Performance vs. Baseline & SOTA Contextualization
 
-Evaluated strictly on the held-out chronological test split (**118,108 transactions**, 4,064 true frauds, **3.441% test fraud rate**):
-
-| Model Architecture | PR-AUC (Primary Metric) | ROC-AUC | Precision (at 0.5) | Recall (at 0.5) | Brier Score Loss (Calibration) |
+| Model Architecture | 5-Seed PR-AUC (Mean ± Std) | 5-Seed ROC-AUC (Mean ± Std) | Precision (at 0.5) | Recall (at 0.5) | Brier Score Loss (Calibration) |
 |---|---|---|---|---|---|
 | **Baseline (Logistic Regression)** | `0.1834` | `0.8311` | `12.60%` | `69.46%` | `0.0682` |
-| *Published Academic Baseline (arXiv:1911.02613, Logistic Regression)* | *`0.1677`* | *`0.8153`* | *N/A* | *N/A* | *N/A* |
 | **LightGBM Classifier** | `0.4784` *(+0.2950)* | `0.8907` | `80.18%` | `30.46%` | `0.0238` |
-| *Published Academic Benchmark (arXiv:1911.02613, XGBoost GBDT)* | *`0.4692`* | *`0.8699`* | *N/A* | *N/A* | *N/A* |
-| **AI Risk Manager XGBoost GBDT (5-Seed Mean ± Std)** | **`0.5111 ± 0.0031`** *(+0.0419 vs arXiv)* | **`0.8967 ± 0.0012`** *(+0.0268 vs arXiv)* | **`81.50%`** | **`31.32%`** | **`0.0225`** *(Best)* |
-| *Kaggle Competition Top Leaderboard (Offline 50-Model Stacking)* | *N/A (Scored on ROC-AUC only)* | *`0.9600 – 0.9800`* | *N/A* | *N/A* | *N/A* |
+| **XGBoost GBDT (Primary Champion, 429 feats)** | **`0.5111 ± 0.0031`** *(0.5071 – 0.5164)* | **`0.8967 ± 0.0012`** | **`81.50%`** | **`31.32%`** | **`0.0225`** *(Best)* |
+| *Kaggle Competition Top Leaderboard (Offline SOTA)* | *N/A (Scored on ROC-AUC only)* | *`0.9600 – 0.9800`* | *N/A (Multi-model ensemble)* | *N/A* | *N/A* |
 
 > [!NOTE]
-> **Cross-Validation vs. Published Literature & Kaggle Offline Ensembles**:
-> - **Peer-Reviewed Academic Cross-Validation**: Published academic benchmarks evaluating on the identical IEEE-CIS 118,108 chronological test partition report Logistic Regression at `0.8153 ROC-AUC / 0.1677 PR-AUC` and XGBoost at `0.8699 ROC-AUC / 0.4692 PR-AUC`. Our pipeline cross-validates these baselines without artificial inflation, while our leak-free feature engineering delivers a **`+0.0419 PR-AUC (+8.9%)`** and **`+0.0268 ROC-AUC`** outperformance over the published baseline.
-> - **Contextualization vs. Kaggle Offline SOTA (0.96–0.98 ROC-AUC)**: Top Kaggle leaderboard solutions utilized offline 50-model ensembles, global target/frequency encodings computed across the entire combined dataset, and post-hoc bidirectional UID reconstruction. AI Risk Manager is a single, lightweight model designed for **$<1\text{ms}$ sub-second streaming inference** (P50: 0.30ms, P99: 0.81ms) strictly enforcing $t-1$ chronological causality and human explainability.
+> **Contextualization vs. Kaggle Offline SOTA (0.96–0.98 ROC-AUC)**:
+> - **Kaggle Top Leaderboard (0.96–0.98 ROC-AUC)**: Achieved using massive offline 50-model ensembles (XGBoost + LightGBM + CatBoost + Neural Nets), global target/frequency encodings computed across the entire combined dataset, and post-hoc UID reconstruction linking past and future events bidirectionally.
+> - **AI Risk Manager (0.8967 ROC-AUC / 0.5111 PR-AUC)**: A single, lightweight model designed for **$<1\text{ms}$ sub-second streaming inference** (P50: 0.30ms, P99: 0.81ms), strictly enforcing $t-1$ chronological causality without global lookahead leakage, human explainability via local SHAP attribution, and operational 3-tier gateway routing.
 
 ---
 
