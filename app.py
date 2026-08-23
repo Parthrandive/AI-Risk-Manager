@@ -247,7 +247,8 @@ with st.sidebar:
     - **PR-AUC**: `0.5111 ± 0.0031` (5-Seed)
     - **ROC-AUC**: `0.8967 ± 0.0012`
     - **Offline Benchmark (10k runs)**: `0.30 ms` (P50) / `0.81 ms` (P99)
-    - **Offline Throughput**: `3,082 txns/sec/core`
+    - **Live UI Scoring**: `<10 ms` (Single-call interactive)
+    - **Throughput**: `3,082 txns/sec/core`
     - **Compliance**: RBI Security 2021 & DPDP 2023
     """)
 
@@ -366,7 +367,7 @@ with col_b2:
     st.metric("Risk Score", f"{prob:.4f}", help="Calibrated fraud probability from primary GBDT model.")
 
 with col_b3:
-    st.metric("Live Scoring Latency", f"{inference_latency_ms:.2f} ms", help="Single-call XGBoost Booster prediction on live CPU stream (README offline benchmark: P50=0.30ms).")
+    st.metric("Live Scoring Latency", f"{inference_latency_ms:.2f} ms", help="Single-call interactive UI scoring latency (<10ms). Offline batch benchmark: P50=0.30ms / P99=0.81ms.")
 
 with col_b4:
     st.metric("SHAP Explanation Time", f"{shap_latency_ms:.1f} ms", help="TreeSHAP local force attribution & structured audit card generation.")
