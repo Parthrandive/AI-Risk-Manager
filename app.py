@@ -20,10 +20,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import joblib
-import shap
 
 from src.explainability import (
-    SHAPExplainabilityEngine,
+    RiskExplainerGateway,
     calibrate_gateway_thresholds
 )
 
@@ -122,11 +121,8 @@ def load_production_pipeline():
     exclude_cols = {'TransactionID', 'TransactionDT', 'isFraud', '_card_proxy', '_device_proxy'}
     feature_cols = [c for c in test_df.columns if c not in exclude_cols and pd.api.types.is_numeric_dtype(test_df[c].dtype)]
 
-    # Subsample for background tree explainer
-    X_background = test_df[feature_cols].sample(min(len(test_df), 300), random_state=42)
-    explainer = SHAPExplainabilityEngine(
+    explainer = RiskExplainerGateway(
         model=model,
-        X_background=X_background,
         feature_names=feature_cols,
         tau_low=0.145,
         tau_high=0.740
