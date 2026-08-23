@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import joblib
+import xgboost as xgb
 
 from src.explainability import (
     RiskExplainerGateway,
