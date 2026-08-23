@@ -282,7 +282,7 @@ st.markdown("#### 2. Live Decision Gateway & SHAP Audit Card")
 
 # Run real-time scoring
 t0 = time.perf_counter()
-X_input = pd.DataFrame([active_row[feature_cols]])
+X_input = pd.to_numeric(active_row[feature_cols], errors="coerce").to_frame().T.astype(np.float32)
 prob = float(model.predict_proba(X_input)[:, 1][0])
 latency_ms = (time.perf_counter() - t0) * 1000.0
 

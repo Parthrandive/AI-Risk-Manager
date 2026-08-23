@@ -225,7 +225,8 @@ class RiskExplainerGateway:
         decision = self.route_decision(risk_score)
         
         # Compute native TreeSHAP force values using booster predict(pred_contribs=True)
-        x_matrix = X_row.to_frame().T[self.feature_names]
+        x_numeric_series = pd.to_numeric(X_row[self.feature_names], errors="coerce")
+        x_matrix = x_numeric_series.to_frame().T.astype(np.float32)
         if hasattr(self.model, "get_booster"):
             dmat = xgb.DMatrix(x_matrix)
             # Booster returns array of shape (1, n_features + 1) where last item is bias
