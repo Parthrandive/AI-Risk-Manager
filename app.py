@@ -142,12 +142,13 @@ def get_override_log():
             return pd.read_csv(OVERRIDE_LOG_PATH)
         except Exception:
             pass
-    # Initialize with realistic baseline audit records
+    # Initialize with realistic baseline audit records (all upheld to establish a clean 0% baseline)
     initial_data = [
         {"timestamp": "2026-08-23T11:15:00Z", "transaction_id": 3459102, "risk_score": 0.3120, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Routine model verdict confirmation without anomaly", "is_override": 0},
         {"timestamp": "2026-08-23T11:42:00Z", "transaction_id": 3459288, "risk_score": 0.2840, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Velocity burst confirmed as authorized business expense", "is_override": 0},
-        {"timestamp": "2026-08-23T12:05:00Z", "transaction_id": 3459340, "risk_score": 0.4500, "model_decision": "MANUAL_REVIEW", "analyst_action": "Override ➔ Approve (Legitimate)", "final_decision": "ANALYST_APPROVED", "analyst_reason": "Verified cardholder travel / legitimate spend pattern", "is_override": 1},
+        {"timestamp": "2026-08-23T12:05:00Z", "transaction_id": 3459340, "risk_score": 0.3410, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Verified address consistency across transaction history", "is_override": 0},
         {"timestamp": "2026-08-23T12:30:00Z", "transaction_id": 3459411, "risk_score": 0.2210, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Routine model verdict confirmation without anomaly", "is_override": 0},
+        {"timestamp": "2026-08-23T12:55:00Z", "transaction_id": 3459489, "risk_score": 0.2650, "model_decision": "MANUAL_REVIEW", "analyst_action": "Uphold Model Verdict", "final_decision": "MANUAL_REVIEW", "analyst_reason": "Cardholder identity confirmed via secondary OTP step-up", "is_override": 0},
     ]
     df = pd.DataFrame(initial_data)
     df.to_csv(OVERRIDE_LOG_PATH, index=False)
@@ -180,8 +181,24 @@ with st.sidebar:
     st.image("https://img.shields.io/badge/Razorpay%20Buildathon-Track%2002%3A%20AI%20Risk%20Manager-blue.svg", use_container_width=True)
     st.markdown("### ⚙️ Production Gateway Controls")
 
-    tau_low = st.number_input("Auto-Approve Cutoff (τ_low)", value=0.145, step=0.005, format="%.3f", help="Transactions with risk < τ_low are approved instantly with zero customer friction.")
-    tau_high = st.number_input("Auto-Block Cutoff (τ_high)", value=0.740, step=0.005, format="%.3f", help="Transactions with risk >= τ_high are automatically blocked (>90% verified precision floor).")
+    tau_low = st.number_input(
+        "Auto-Approve Cutoff (τ_low)",
+        min_value=0.010,
+        max_value=0.990,
+        value=0.145,
+        step=0.005,
+        format="%.3f",
+        help="Transactions with risk < τ_low are approved instantly with zero customer friction."
+    )
+    tau_high = st.number_input(
+        "Auto-Block Cutoff (τ_high)",
+        min_value=0.010,
+        max_value=1.000,
+        value=0.740,
+        step=0.005,
+        format="%.3f",
+        help="Transactions with risk >= τ_high are automatically blocked (≥90% verified precision floor, clamped at 1.000 max)."
+    )
 
     explainer.tau_low = tau_low
     explainer.tau_high = tau_high
@@ -190,17 +207,20 @@ with st.sidebar:
     st.markdown("### 📊 Analyst Override Telemetry")
     override_log = get_override_log()
     total_reviews = len(override_log)
-    total_overrides = override_log["is_override"].sum() if total_reviews > 0 else 0
+    total_overrides = int(override_log["is_override"].sum()) if total_reviews > 0 else 0
     override_rate = (total_overrides / total_reviews * 100.0) if total_reviews > 0 else 0.0
 
     col_s1, col_s2 = st.columns(2)
     col_s1.metric("Adjudicated", f"{total_reviews:,}")
     col_s2.metric("Override %", f"{override_rate:.1f}%")
 
-    if override_rate > 15.0 and total_reviews >= 5:
-        st.warning("⚠️ **Drift Alert**: Analyst override rate exceeds 15%. Triggering behavioral drift inspection.")
+    if total_reviews >= 3:
+        if override_rate > 15.0:
+            st.warning(f"⚠️ **Drift Alert**: Override rate ({override_rate:.1f}%) exceeds 15% threshold! Triggering behavioral drift inspection.")
+        else:
+            st.success(f"✔ **Drift Status**: Normal ({override_rate:.1f}% ≤ 15% threshold).")
     else:
-        st.success("✔ **Drift Status**: Normal (Override rate <= 15%).")
+        st.info("ℹ️ **Drift Status**: Initializing baseline telemetry (<3 cases).")
 
     st.markdown("---")
     st.markdown("### ⚡ Live System Specs")
@@ -208,8 +228,8 @@ with st.sidebar:
     - **Engine**: XGBoost GBDT (429 Clues)
     - **PR-AUC**: `0.5111 ± 0.0031` (5-Seed)
     - **ROC-AUC**: `0.8967 ± 0.0012`
-    - **Inference Latency**: `0.30 ms` (P50) / `0.81 ms` (P99)
-    - **Throughput**: `3,082 txns/sec/core`
+    - **Offline Benchmark (10k runs)**: `0.30 ms` (P50) / `0.81 ms` (P99)
+    - **Offline Throughput**: `3,082 txns/sec/core`
     - **Compliance**: RBI Security 2021 & DPDP 2023
     """)
 
@@ -324,10 +344,10 @@ with col_b2:
     st.metric("Risk Score", f"{prob:.4f}", help="Calibrated fraud probability from primary GBDT model.")
 
 with col_b3:
-    st.metric("Inference Latency", f"{inference_latency_ms:.2f} ms", help="Pure XGBoost model prediction on single CPU core (README: P50=0.30ms).")
+    st.metric("Live Scoring Latency", f"{inference_latency_ms:.2f} ms", help="Single-call XGBoost Booster prediction on live CPU stream (README offline benchmark: P50=0.30ms).")
 
 with col_b4:
-    st.metric("SHAP Latency", f"{shap_latency_ms:.1f} ms", help="TreeSHAP local force attribution & audit card assembly.")
+    st.metric("SHAP Explanation Time", f"{shap_latency_ms:.1f} ms", help="TreeSHAP local force attribution & structured audit card generation.")
 
 with col_b5:
     st.metric("Transaction", f"#{active_txn_id}")
