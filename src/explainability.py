@@ -46,12 +46,8 @@ INTERPRETABLE_FEATURES = {
     "ProductCD_encoded",
     "card4_encoded",
     "card6_encoded",
-    "P_emaildomain_encoded",
-    "R_emaildomain_encoded",
     "DeviceType_encoded",
-    "DeviceInfo_encoded",
-    "card1", "card2", "card3", "card5",
-    "addr1", "addr2", "dist1", "dist2"
+    "DeviceInfo_encoded"
 }
 
 
@@ -59,46 +55,39 @@ def calibrate_gateway_thresholds(
     y_prob: np.ndarray,
     y_true: Optional[np.ndarray] = None,
     max_review_budget_pct: float = 3.0,
-    min_autoblock_precision: float = 90.0
+    min_autoblock_precision: float = 90.0,
+    num_thresholds: int = 1000
 ) -> Tuple[float, float, Dict[str, Any]]:
     """
-    Mathematically derives the 3-way triage gateway boundaries:
-    1. tau_high (Auto-Block): Lowest threshold satisfying precision >= min_autoblock_precision (90.0%).
-    2. tau_low (Manual Review Lower Bound): Highest threshold satisfying review queue volume <= max_review_budget_pct (3.0%).
+    Calibrates triage gateway operating thresholds based on business constraints.
     """
-    y_prob = np.asarray(y_prob, dtype=float)
-    n_samples = len(y_prob)
-    max_review_cases = int(n_samples * (max_review_budget_pct / 100.0))
+    sorted_probs = np.sort(y_prob)
+    n_total = len(sorted_probs)
+    max_review_cases = int(n_total * (max_review_budget_pct / 100.0))
 
-    # 1. Derive tau_high from the precision floor
-    tau_high = 0.790 # Default fallback based on verified test distribution
-    if y_true is not None:
-        y_true = np.asarray(y_true, dtype=int)
-        for t in np.arange(0.650, 0.950, 0.005):
-            mask = y_prob >= t
-            tp = int(np.sum((y_true == 1) & mask))
-            fp = int(np.sum((y_true == 0) & mask))
-            total_block = tp + fp
-            if total_block > 0:
-                prec = (tp / total_block) * 100.0
+    tau_high = 0.740
+    if y_true is not None and np.sum(y_true) > 0:
+        threshold_grid = np.linspace(0.99, 0.40, 600)
+        best_tau_high = 0.740
+        for tau in threshold_grid:
+            blocked_mask = y_prob >= tau
+            n_blocked = np.sum(blocked_mask)
+            if n_blocked >= 50:
+                prec = np.sum(y_true[blocked_mask]) / n_blocked * 100.0
                 if prec >= min_autoblock_precision:
-                    tau_high = round(float(t), 3)
+                    best_tau_high = tau
+                else:
                     break
+        tau_high = float(best_tau_high)
 
-    # 2. Derive tau_low to saturate the review capacity budget [tau_low, tau_high)
-    tau_low = 0.150 # Default fallback based on verified test distribution
-    best_diff = float("inf")
-    
-    for t_cand in np.arange(0.100, tau_high, 0.005):
-        rev_count = int(np.sum((y_prob >= t_cand) & (y_prob < tau_high)))
-        if rev_count <= max_review_cases:
-            diff = max_review_cases - rev_count
-            if diff < best_diff:
-                best_diff = diff
-                tau_low = round(float(t_cand), 3)
-                # If we're within 100 cases of the cap, stop
-                if diff <= 100:
-                    break
+    tau_low = 0.145
+    for tau in np.linspace(0.01, tau_high - 0.01, 500):
+        in_review = np.sum((y_prob >= tau) & (y_prob < tau_high))
+        if in_review <= max_review_cases:
+            diff = max_review_cases - in_review
+            tau_low = float(tau)
+            if diff <= 100:
+                break
 
     calibration_metadata = {
         "tau_low": tau_low,
@@ -122,19 +111,21 @@ class RiskExplainerGateway:
         self,
         model: Any,
         feature_names: List[str],
-        tau_low: float = 0.150,
-        tau_high: float = 0.790
+        tau_low: float = 0.145,
+        tau_high: float = 0.740
     ):
         self.model = model
         self.feature_names = feature_names
         self.tau_low = tau_low
         self.tau_high = tau_high
 
-    def route_decision(self, risk_score: float) -> str:
+    def route_decision(self, risk_score: float, tau_low: Optional[float] = None, tau_high: Optional[float] = None) -> str:
         """Determines the 3-way triage routing decision."""
-        if risk_score < self.tau_low:
+        t_low = tau_low if tau_low is not None else self.tau_low
+        t_high = tau_high if tau_high is not None else self.tau_high
+        if risk_score < t_low:
             return "AUTO_APPROVE"
-        elif risk_score < self.tau_high:
+        elif risk_score < t_high:
             return "MANUAL_REVIEW"
         else:
             return "AUTO_BLOCK"
@@ -144,34 +135,46 @@ class RiskExplainerGateway:
         if feature_name == "amt_to_expanding_card_mean_ratio":
             if value > 1.3 and shap_val > 0:
                 return f"Transaction amount is {value:.1f}x higher than historical expanding card average."
-            elif value < 0.6 and shap_val < 0:
-                return f"Transaction amount is consistent with historical card average ({value:.1f}x of mean)."
-            elif shap_val > 0.02:
+            elif value < 0.8 and shap_val < 0:
+                return f"Transaction amount aligns with historical card average ({value:.1f}x of mean)."
+            elif shap_val > 0.01:
                 return f"Expanding card spending ratio ({value:.2f}x) exhibits upward anomaly."
         
-        elif feature_name == "card_count_10m":
+        elif feature_name in {"card_count_10m", "card_txn_count_10m"}:
             if value >= 2 and shap_val > 0:
                 return f"High short-term velocity spike: {int(value)} transactions on card in the last 10 minutes."
+            elif value <= 1 and shap_val < 0:
+                return f"Low short-term velocity ({int(value)} txn in last 10m)."
         
-        elif feature_name == "card_count_1h":
+        elif feature_name in {"card_count_1h", "card_txn_count_1h"}:
             if value >= 3 and shap_val > 0:
                 return f"Hourly velocity surge: {int(value)} transactions on card in the last 1 hour."
+            elif value <= 1 and shap_val < 0:
+                return f"Normal hourly volume ({int(value)} txn in last 1h)."
         
         elif feature_name in {"card_count_24h", "card_txn_count_24h"}:
-            if value >= 5 and shap_val > 0:
+            if value >= 4 and shap_val > 0:
                 return f"Elevated 24h card volume: {int(value)} transactions on card in the last 24 hours."
+            elif value <= 2 and shap_val < 0:
+                return f"Stable 24h card activity ({int(value)} transactions)."
 
         elif feature_name == "is_addr_mismatch_from_card_history":
             if value == 1 and shap_val > 0:
                 return "Geographic region mismatch: Transaction address differs from card's historical primary region."
+            elif value == 0 and shap_val < 0:
+                return "Geographic consistency: Billing/shipping region matches cardholder historical location."
 
         elif feature_name == "card_prior_distinct_addr_count":
             if value >= 3 and shap_val > 0:
-                return f"Multi-region usage anomaly: Card previously observed across {int(value)} distinct address regions."
+                return f"Multi-region dispersion anomaly: Card previously observed across {int(value)} distinct address regions."
+            elif value <= 2 and shap_val < 0:
+                return f"Consistent card usage across localized region history ({int(value)} prior regions)."
 
         elif feature_name in {"time_since_last_card", "time_since_last_txn_card"}:
             if 0 <= value < 60 and shap_val > 0:
                 return f"Rapid repeat card usage: Only {int(value)} seconds since previous card transaction."
+            elif value > 3600 and shap_val < 0:
+                return f"Normal time interval between card payments ({int(value // 60)} minutes since last txn)."
             elif value == -1.0 and shap_val > 0:
                 return "First-time observed card proxy (no prior transaction history on instrument)."
 
@@ -188,25 +191,23 @@ class RiskExplainerGateway:
         elif feature_name == "is_high_risk_email":
             if value == 1 and shap_val > 0:
                 return "Email domain is associated with high-risk / anonymous disposable providers."
+            elif value == 0 and shap_val < 0:
+                return "Standard trusted corporate/consumer email provider."
 
         elif feature_name == "TransactionAmt":
             if value > 300 and shap_val > 0:
                 return f"High nominal transaction value (${value:,.2f})."
-            elif shap_val > 0.03:
-                return f"Transaction amount (${value:,.2f}) contributes elevated positive risk force."
+            elif value < 50 and shap_val < 0:
+                return f"Low nominal transaction amount (${value:,.2f}) reduces relative risk exposure."
+            elif shap_val > 0.02:
+                return f"Transaction amount (${value:,.2f}) carries elevated risk weight."
 
         elif feature_name in {"card4_encoded", "card6_encoded", "ProductCD_encoded"}:
-            if shap_val > 0.02:
-                clean_name = feature_name.replace("_encoded", "")
-                return f"Payment network / card type attribute ({clean_name}) carries elevated historical risk."
-
-        elif feature_name in {"addr1", "addr2", "dist1", "dist2"}:
-            if shap_val > 0.02:
-                return f"Undocumented categorical address/distance feature ({feature_name}={value:.0f}) contributes positive anomaly weight."
-
-        elif feature_name in {"card1", "card2", "card3", "card5"}:
-            if shap_val > 0.02:
-                return f"Undocumented categorical card property feature ({feature_name}={value:.0f}) contributes positive anomaly weight."
+            clean_name = feature_name.replace("_encoded", "")
+            if shap_val > 0.01:
+                return f"Payment instrument attribute ({clean_name}) carries elevated historical risk weighting."
+            elif shap_val < -0.01:
+                return f"Payment instrument attribute ({clean_name}) reflects standard consumer payment profile."
 
         return None
 
@@ -214,7 +215,9 @@ class RiskExplainerGateway:
         self,
         X_row: pd.Series,
         risk_score: float,
-        transaction_id: Optional[int] = None
+        transaction_id: Optional[int] = None,
+        tau_low: Optional[float] = None,
+        tau_high: Optional[float] = None
     ) -> Dict[str, Any]:
         """
         Generates an auditable risk card with:
@@ -222,12 +225,13 @@ class RiskExplainerGateway:
         2. Plain-language reasons strictly for verified engineered features.
         3. Transparent disclosure percentage for undisclosed Vesta proprietary features.
         """
-        decision = self.route_decision(risk_score)
+        decision = self.route_decision(risk_score, tau_low=tau_low, tau_high=tau_high)
         
         # Compute native TreeSHAP force values using booster predict(pred_contribs=True)
-        x_matrix = X_row.to_frame().T[self.feature_names]
+        x_numeric_series = pd.to_numeric(X_row[self.feature_names], errors="coerce")
+        x_matrix = x_numeric_series.to_frame().T.astype(np.float32)
         if hasattr(self.model, "get_booster"):
-            dmat = xgb.DMatrix(x_matrix)
+            dmat = xgb.DMatrix(x_matrix, feature_names=self.feature_names)
             # Booster returns array of shape (1, n_features + 1) where last item is bias
             shap_values = self.model.get_booster().predict(dmat, pred_contribs=True)[0][:-1]
         else:

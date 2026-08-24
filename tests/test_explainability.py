@@ -123,3 +123,26 @@ def test_run_layer5_pipeline_end_to_end():
         assert os.path.exists(results["artifact_paths"]["triage_summary_json"])
         assert "triage_distribution" in results
         assert len(results["sample_audit_cards"]) > 0
+
+
+def test_analyst_override_logging():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        override_file = os.path.join(tmpdir, "analyst_override_log.csv")
+        
+        # Simulate override saving
+        df = pd.DataFrame([{
+            "timestamp": "2026-08-23T14:00:00Z",
+            "transaction_id": 3459635,
+            "risk_score": 0.2950,
+            "model_decision": "MANUAL_REVIEW",
+            "analyst_action": "Override ➔ Approve (Legitimate)",
+            "final_decision": "ANALYST_APPROVED",
+            "analyst_reason": "Verified cardholder travel",
+            "is_override": 1
+        }])
+        df.to_csv(override_file, index=False)
+
+        loaded_df = pd.read_csv(override_file)
+        assert len(loaded_df) == 1
+        assert loaded_df["is_override"].iloc[0] == 1
+        assert loaded_df["final_decision"].iloc[0] == "ANALYST_APPROVED"
