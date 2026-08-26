@@ -93,18 +93,72 @@
   .trilemma .k{font-family:var(--mono); font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.08em;}
   .trilemma .v{font-size:14px; margin-top:8px; line-height:1.5; color:var(--text);}
 
-  /* ---- architecture ---- */
-  .pipeline{margin-top:36px; display:flex; flex-direction:column; gap:6px; max-width:800px;}
-  .stage{
-    display:grid; grid-template-columns:44px 1fr; gap:18px; align-items:center;
-    background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 20px; position:relative;
-    transition:border-color .2s;
+  /* ---- architecture flowchart ---- */
+  .flowchart-container{margin-top:36px; max-width:960px; display:flex; flex-direction:column; gap:20px;}
+  .flow-grid{display:grid; grid-template-columns:1fr; gap:16px; position:relative;}
+  
+  .flow-node{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px 22px;
+    display:grid; grid-template-columns:auto 1fr auto; gap:20px; align-items:center;
+    position:relative; transition:all .25s ease; cursor:pointer;
   }
-  .stage:hover{border-color:var(--accent);}
-  .stage .idx{font-family:var(--mono); color:var(--accent); font-size:14px; font-weight:600;}
-  .stage .name{font-weight:600; font-size:15px; display:flex; align-items:center; gap:8px;}
-  .stage .desc{color:var(--text-dim); font-size:13px; margin-top:4px; line-height:1.4;}
-  .stage.gateway{border-color:rgba(76,126,255,0.4); background:linear-gradient(90deg, rgba(76,126,255,0.06), var(--panel));}
+  .flow-node:hover, .flow-node.active-node{
+    border-color:var(--accent); background:linear-gradient(90deg, rgba(76,126,255,0.08), var(--panel));
+    box-shadow:0 0 16px rgba(76,126,255,0.15); transform:translateX(4px);
+  }
+  .flow-node.gateway-node{border-color:rgba(76,126,255,0.4); background:linear-gradient(90deg, rgba(76,126,255,0.06), var(--panel));}
+
+  .node-badge{
+    font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent);
+    background:rgba(76,126,255,0.12); padding:6px 12px; border-radius:6px; border:1px solid rgba(76,126,255,0.3);
+    min-width:78px; text-align:center;
+  }
+  .node-content .title{font-weight:600; font-size:15px; display:flex; align-items:center; gap:8px;}
+  .node-content .desc{color:var(--text-dim); font-size:13px; margin-top:4px; line-height:1.4;}
+  .node-meta{font-family:var(--mono); font-size:11.5px; color:var(--text-dim); text-align:right;}
+  .node-meta b{color:var(--green);}
+
+  /* flowchart connector arrow */
+  .flow-arrow{
+    display:flex; align-items:center; justify-content:center; gap:12px;
+    font-family:var(--mono); font-size:11px; color:var(--text-dim); padding:2px 0;
+  }
+  .flow-arrow .line{height:20px; width:2px; background:linear-gradient(to bottom, var(--line), var(--accent));}
+  .flow-arrow .tag{background:var(--panel-2); border:1px solid var(--line); padding:2px 8px; border-radius:4px;}
+
+  /* branch node for layer 5 */
+  .branch-wrapper{
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-top:4px;
+  }
+  .branch-card{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:14px;
+    font-size:12.5px; text-align:center;
+  }
+  .branch-card.b-green{border-color:rgba(53,211,138,0.4);}
+  .branch-card.b-green .pct{color:var(--green); font-family:var(--mono); font-size:18px; font-weight:600;}
+  .branch-card.b-amber{border-color:rgba(232,178,61,0.4);}
+  .branch-card.b-amber .pct{color:var(--amber); font-family:var(--mono); font-size:18px; font-weight:600;}
+  .branch-card.b-red{border-color:rgba(239,83,80,0.4);}
+  .branch-card.b-red .pct{color:var(--red); font-family:var(--mono); font-size:18px; font-weight:600;}
+  
+  /* feedback loop card */
+  .feedback-loop-card{
+    background:rgba(232,178,61,0.05); border:1px dashed var(--amber); border-radius:8px;
+    padding:12px 18px; font-size:12.5px; color:var(--text-dim); display:flex; align-items:center; justify-content:space-between;
+    font-family:var(--mono);
+  }
+  .feedback-loop-card b{color:var(--amber);}
+
+  /* interactive layer detail modal / inspector */
+  .node-inspector{
+    background:var(--panel-2); border:1px solid var(--accent); border-radius:10px;
+    padding:18px 22px; margin-top:10px; font-family:var(--mono); font-size:12.5px;
+    display:none; animation:fadeIn .2s ease;
+  }
+  @keyframes fadeIn{from{opacity:0; transform:translateY(-6px);} to{opacity:1; transform:translateY(0);}}
+  .node-inspector .grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:10px;}
+  .node-inspector .k{color:var(--text-dim); text-transform:uppercase; font-size:10.5px; letter-spacing:0.06em;}
+  .node-inspector .v{color:var(--text); margin-top:4px; font-size:12.5px;}
 
   /* ---- diagnostic discipline ---- */
   .catches{display:flex; flex-direction:column; gap:0; max-width:860px; margin-top:36px;}
@@ -262,46 +316,154 @@
   </div>
 </section>
 
-<!-- 02 — ARCHITECTURE -->
+<!-- 02 — ARCHITECTURE FLOWCHART -->
 <section id="architecture">
-  <div class="eyebrow"><span class="num">02</span> Pipeline Architecture</div>
-  <h1>Five production layers. One decision gateway. Zero lookahead leakage.</h1>
-  <div class="pipeline">
-    <div class="stage">
-      <div class="idx">01</div>
-      <div>
-        <div class="name">Chronological Partitioning & Leakage Invariants</div>
-        <div class="desc">Strict 80/20 time-quantile split with 10% validation buffer — zero random shuffling across time.</div>
+  <div class="eyebrow"><span class="num">02</span> Pipeline Architecture Flowchart</div>
+  <h1>Five production layers. One decision gateway. Connected end-to-end.</h1>
+  <p class="lede">Click any layer in the flowchart below to inspect its data contract, input/output artifacts, and mathematical invariants.</p>
+
+  <div class="flowchart-container">
+    <div class="flow-grid">
+
+      <!-- RAW INGESTION BANNER -->
+      <div style="background:var(--panel-2); border:1px dashed var(--line); border-radius:8px; padding:12px 18px; display:flex; justify-content:space-between; align-items:center; font-family:var(--mono); font-size:12px; color:var(--text-dim);">
+        <div>📥 <b>RAW INGESTION STREAM</b>: <code>train_transaction.csv</code> (590,540 rows) + <code>train_identity.csv</code> (144,233 rows)</div>
+        <div style="color:var(--accent);">434 Raw Features</div>
+      </div>
+
+      <!-- CONNECTOR 0 -> 1 -->
+      <div class="flow-arrow"><div class="line"></div><div class="tag">Raw CSV Stream</div><div class="line"></div></div>
+
+      <!-- LAYER 1 -->
+      <div class="flow-node active-node" onclick="inspectLayer(1)" id="node-1">
+        <div class="node-badge">LAYER 01</div>
+        <div class="node-content">
+          <div class="title">Chronological Ingestion & Leakage-Free Partitioning</div>
+          <div class="desc">Strict 80/20 time-quantile split with 10% validation buffer. Proves zero timestamp overlap across splits.</div>
+        </div>
+        <div class="node-meta">
+          <div>TRAIN: <b>413,378 txns</b></div>
+          <div>TEST: <b>118,108 txns</b></div>
+        </div>
+      </div>
+
+      <!-- CONNECTOR 1 -> 2 -->
+      <div class="flow-arrow"><div class="line"></div><div class="tag">Zero-Overlap Parquet Splits (train.parquet, test.parquet)</div><div class="line"></div></div>
+
+      <!-- LAYER 2 -->
+      <div class="flow-node" onclick="inspectLayer(2)" id="node-2">
+        <div class="node-badge">LAYER 02</div>
+        <div class="node-content">
+          <div class="title">Continuous Streaming State Feature Engineering (<code>StreamingRiskState</code>)</div>
+          <div class="desc">Rolling 10m/1h/24h velocity windows, t−1 expanding card mean ratios, and cross-boundary state carryover.</div>
+        </div>
+        <div class="node-meta">
+          <div>ENGINEERED: <b>429 Features</b></div>
+          <div>STATE LEAKAGE: <b>0.00% (Pure t−1)</b></div>
+        </div>
+      </div>
+
+      <!-- CONNECTOR 2 -> 3 -->
+      <div class="flow-arrow"><div class="line"></div><div class="tag">Model-Ready Numeric Vectors (train_features.parquet)</div><div class="line"></div></div>
+
+      <!-- LAYER 3 -->
+      <div class="flow-node" onclick="inspectLayer(3)" id="node-3">
+        <div class="node-badge">LAYER 03</div>
+        <div class="node-content">
+          <div class="title">Sub-Millisecond Gradient-Boosted Decision Engine (XGBoost GBDT)</div>
+          <div class="desc">Primary champion classifier evaluated across 5 random seeds against LightGBM and Logistic Regression.</div>
+        </div>
+        <div class="node-meta">
+          <div>5-SEED PR-AUC: <b>0.5111 ± 0.0031</b></div>
+          <div>P50 INFERENCE: <b>0.30 ms</b></div>
+        </div>
+      </div>
+
+      <!-- CONNECTOR 3 -> 4 -->
+      <div class="flow-arrow"><div class="line"></div><div class="tag">Calibrated Probability Distribution P(fraud | X)</div><div class="line"></div></div>
+
+      <!-- LAYER 4 -->
+      <div class="flow-node" onclick="inspectLayer(4)" id="node-4">
+        <div class="node-badge">LAYER 04</div>
+        <div class="node-content">
+          <div class="title">Probability Calibration & Expected Value (EV) Threshold Optimization</div>
+          <div class="desc">Brier Score reliability validation (0.0225) + 19-point financial cost matrix optimizing labor vs fraud loss.</div>
+        </div>
+        <div class="node-meta">
+          <div>BRIER SCORE: <b>0.0225</b></div>
+          <div>NET FINANCIAL EV: <b>+$352.8k</b></div>
+        </div>
+      </div>
+
+      <!-- CONNECTOR 4 -> 5 -->
+      <div class="flow-arrow"><div class="line"></div><div class="tag">Calibrated Cutoffs (τ_low = 0.145, τ_high = 0.740)</div><div class="line"></div></div>
+
+      <!-- LAYER 5 -->
+      <div class="flow-node gateway-node" onclick="inspectLayer(5)" id="node-5">
+        <div class="node-badge">LAYER 05</div>
+        <div class="node-content">
+          <div class="title">SHAP Explainability & 3-Lane Triage Gateway ⚡</div>
+          <div class="desc">Exact local TreeSHAP attribution cards + automated human-in-the-loop gray-zone triage routing.</div>
+          
+          <!-- 3-LANE BRANCH PREVIEW -->
+          <div class="branch-wrapper">
+            <div class="branch-card b-green">
+              <div class="pct">96.22%</div>
+              <div style="font-weight:600; color:var(--green); margin-top:2px;">🟢 AUTO-APPROVE</div>
+              <div style="color:var(--text-dim); font-size:11px; margin-top:4px;">Score &lt; 0.145 (0 Friction)</div>
+            </div>
+            <div class="branch-card b-amber">
+              <div class="pct">2.89%</div>
+              <div style="font-weight:600; color:var(--amber); margin-top:2px;">🟡 MANUAL REVIEW</div>
+              <div style="color:var(--text-dim); font-size:11px; margin-top:4px;">[0.145, 0.740) Gray-Zone</div>
+            </div>
+            <div class="branch-card b-red">
+              <div class="pct">0.88%</div>
+              <div style="font-weight:600; color:var(--red); margin-top:2px;">🔴 AUTO-BLOCK</div>
+              <div style="color:var(--text-dim); font-size:11px; margin-top:4px;">Score ≥ 0.740 (90.2% Prec)</div>
+            </div>
+          </div>
+        </div>
+        <div class="node-meta">
+          <div>BLOCK PREC: <b>90.24%</b></div>
+          <div>REVIEW QUEUE: <b>2.89% (≤3%)</b></div>
+        </div>
+      </div>
+
+      <!-- FEEDBACK LOOP -->
+      <div class="feedback-loop-card">
+        <div>⟲ <b>HUMAN-IN-THE-LOOP FEEDBACK LOOP</b>: Analyst Override Log $\to$ Real-Time Behavioral Drift Monitor ($>15\%$ threshold alert) $\to$ Layer 2/3 Model Retraining Trigger</div>
+        <div style="color:var(--amber); font-weight:600;">Active Drift Telemetry</div>
+      </div>
+
+    </div>
+
+    <!-- DYNAMIC LAYER INSPECTOR CARD -->
+    <div class="node-inspector" id="inspector-card" style="display:block;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line); padding-bottom:10px;">
+        <div style="font-size:14px; font-weight:700; color:var(--accent);" id="insp-title">LAYER 01: CHRONOLOGICAL PARTITIONING & LEAKAGE-FREE SPLIT</div>
+        <div style="color:var(--green); font-size:11.5px;" id="insp-file">src/data_split.py | scripts/run_layer1.py</div>
+      </div>
+      <div class="grid">
+        <div>
+          <div class="k">Input Invariants</div>
+          <div class="v" id="insp-input">Raw IEEE-CIS CSV streams sorted by monotonic TransactionDT (t_min=86400, t_max=15811131).</div>
+        </div>
+        <div>
+          <div class="k">Output Artifacts</div>
+          <div class="v" id="insp-output">data/processed/train.parquet (472,432 rows) & test.parquet (118,108 rows)</div>
+        </div>
+        <div>
+          <div class="k">Integrity Guarantee</div>
+          <div class="v" id="insp-guarantee">max(Train_TransactionDT) &lt; min(Test_TransactionDT). Zero future leakage into train.</div>
+        </div>
+        <div>
+          <div class="k">Key Metric / Constraint</div>
+          <div class="v" id="insp-metric">80/20 Time Split (70% Train, 10% Val, 20% Held-Out Test). Test fraud rate: 3.441%.</div>
+        </div>
       </div>
     </div>
-    <div class="stage">
-      <div class="idx">02</div>
-      <div>
-        <div class="name">Continuous Streaming State Feature Engineering</div>
-        <div class="desc">Rolling 10m/1h/24h velocity windows, t−1 expanding card mean ratios, and cross-boundary state carryover.</div>
-      </div>
-    </div>
-    <div class="stage">
-      <div class="idx">03</div>
-      <div>
-        <div class="name">Sub-Millisecond Gradient-Boosted Decision Engine</div>
-        <div class="desc">Native C++ XGBoost booster inference (P50: 0.30ms, 3,082 txns/sec/core) vs. LightGBM & Logistic Regression.</div>
-      </div>
-    </div>
-    <div class="stage">
-      <div class="idx">04</div>
-      <div>
-        <div class="name">Probability Calibration & Unit Economics Optimization</div>
-        <div class="desc">Reliability diagram (Brier score 0.0225) + cost-utility matrix yielding +$352.8k net financial value.</div>
-      </div>
-    </div>
-    <div class="stage gateway">
-      <div class="idx">05</div>
-      <div>
-        <div class="name">SHAP Explainability & 3-Lane Triage Gateway ⚡</div>
-        <div class="desc">Exact local TreeSHAP factor attribution + human-in-the-loop abstention queue with live drift alerts.</div>
-      </div>
-    </div>
+
   </div>
 </section>
 
@@ -545,6 +707,66 @@
       txnScore.style.color = 'var(--red)';
       txnAction.innerText = '🔴 AUTO-BLOCK (≥90% Precision Floor)';
       txnAction.style.color = 'var(--red)';
+    }
+  }
+
+  // Interactive Layer Inspector
+  const layerData = {
+    1: {
+      title: "LAYER 01: CHRONOLOGICAL PARTITIONING & LEAKAGE-FREE SPLIT",
+      file: "src/data_split.py | scripts/run_layer1.py",
+      input: "Raw IEEE-CIS CSV streams sorted by monotonic TransactionDT (t_min=86400, t_max=15811131).",
+      output: "data/processed/train.parquet (472,432 rows) & test.parquet (118,108 rows)",
+      guarantee: "max(Train_TransactionDT) < min(Test_TransactionDT). Zero future lookahead leakage.",
+      metric: "80/20 Time Split (70% Train, 10% Val, 20% Held-Out Test). Test fraud rate: 3.441%."
+    },
+    2: {
+      title: "LAYER 02: CONTINUOUS STREAMING STATE FEATURE ENGINEERING",
+      file: "src/feature_engineering.py | scripts/run_layer2.py",
+      input: "Historical split parquets + streaming state object (StreamingRiskState).",
+      output: "data/processed/train_features.parquet & test_features.parquet (429 model features)",
+      guarantee: "Expanding mean and rolling velocity carryover across split boundary without resetting state.",
+      metric: "Rolling velocity (10m/1h/24h) + t−1 expanding card mean + geo dispersion entropy."
+    },
+    3: {
+      title: "LAYER 03: SUB-MILLISECOND GRADIENT-BOOSTED DECISION ENGINE",
+      file: "src/model.py | scripts/run_layer3.py",
+      input: "Transformed 429-column numeric float32 feature matrices (DMatrix).",
+      output: "data/processed/fraud_detector_gbdt.joblib (Primary Champion Model)",
+      guarantee: "5-Seed Cross Validation (Seeds: 42, 100, 2024, 7, 777). Evaluated strictly out-of-sample.",
+      metric: "PR-AUC: 0.5111 ± 0.0031 | ROC-AUC: 0.8967 ± 0.0012 | P50 Latency: 0.30 ms (3,082 txns/s/core)."
+    },
+    4: {
+      title: "LAYER 04: PROBABILITY CALIBRATION & COST-UTILITY THRESHOLD OPTIMIZATION",
+      file: "src/evaluation.py | scripts/run_layer4.py",
+      input: "Raw continuous risk probability output P(fraud | X) on validation and test sets.",
+      output: "Optimal operational thresholds (τ_low = 0.145, τ_high = 0.740) + cost curve JSON",
+      guarantee: "Brier Score Reliability Calibration (0.0225) + mathematical cost-loss tradeoff.",
+      metric: "+$352,859.38 Net Financial Value generated on test volume (20.7x ROI over analyst labor)."
+    },
+    5: {
+      title: "LAYER 05: SHAP EXPLAINABILITY & 3-LANE DECISION GATEWAY",
+      file: "src/explainability.py | scripts/run_layer5.py | app.py",
+      input: "Real-time transaction vector + operational threshold cutoffs (τ_low, τ_high).",
+      output: "Auditable JSON Risk Card + Local TreeSHAP Force Factor Attribution + Traffic Routing",
+      guarantee: "Abstention on ambiguous gray-zone band [0.145, 0.740). Opaque signal transparency statement.",
+      metric: "96.22% Auto-Approve (0 friction) | 2.89% Review Queue (≤3% cap) | 90.24% Block Precision."
+    }
+  };
+
+  function inspectLayer(layerNum){
+    document.querySelectorAll('.flow-node').forEach(node => node.classList.remove('active-node'));
+    const activeNode = document.getElementById('node-' + layerNum);
+    if(activeNode) activeNode.classList.add('active-node');
+
+    const data = layerData[layerNum];
+    if(data){
+      document.getElementById('insp-title').innerText = data.title;
+      document.getElementById('insp-file').innerText = data.file;
+      document.getElementById('insp-input').innerText = data.input;
+      document.getElementById('insp-output').innerText = data.output;
+      document.getElementById('insp-guarantee').innerText = data.guarantee;
+      document.getElementById('insp-metric').innerText = data.metric;
     }
   }
 </script>
