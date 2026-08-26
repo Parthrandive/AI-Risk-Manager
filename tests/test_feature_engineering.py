@@ -228,3 +228,45 @@ def test_run_layer2_pipeline_end_to_end(synthetic_splits):
 
         loaded_pipeline = joblib.load(metadata["artifact_paths"]["pipeline"])
         assert loaded_pipeline.is_fitted
+
+
+def test_audit_feature_temporal_consistency():
+    """Tests the temporal consistency diagnostic on synthetic multi-period data."""
+    from src.feature_engineering import audit_feature_temporal_consistency
+
+    np.random.seed(42)
+    n = 400
+    times = np.linspace(100, 10000, n)
+    
+    # Feature 1: Stable predictive feature
+    # Feature 2: Inverted / decaying feature
+    y = np.random.choice([0, 1], size=n, p=[0.9, 0.1])
+    
+    f_stable = np.where(y == 1, np.random.uniform(5, 10, n), np.random.uniform(0, 4, n))
+    
+    # Inverts from positive to negative over time
+    f_inverted = np.where(times < 5000, 
+                          np.where(y == 1, 10.0, 1.0),
+                          np.where(y == 1, 1.0, 10.0))
+
+    df = pd.DataFrame({
+        "TransactionID": np.arange(n),
+        "TransactionDT": times,
+        "isFraud": y,
+        "f_stable": f_stable,
+        "f_inverted": f_inverted
+    })
+
+    report = audit_feature_temporal_consistency(
+        train_features_df=df,
+        features_to_test=["f_stable", "f_inverted"],
+        early_quantile=0.3,
+        late_quantile=0.7
+    )
+
+    assert report["total_features_evaluated"] == 2
+    metrics = {m["feature_name"]: m for m in report["feature_metrics"]}
+    
+    assert metrics["f_stable"]["stability_status"] == "STABLE (PASS)"
+    assert metrics["f_inverted"]["stability_status"] in ["INVERTED (TOXIC)", "DECAYING"]
+
