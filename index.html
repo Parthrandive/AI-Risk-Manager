@@ -147,38 +147,27 @@
   .stat .n{font-family:var(--mono); font-size:26px; color:var(--accent); font-weight:600;}
   .stat .l{font-size:11.5px; color:var(--text-dim); margin-top:4px;}
 
-  /* ---- gateway simulation (interactive signature element) ---- */
+  /* ---- gateway static 3-lane policy (macro architecture) ---- */
   .gateway-wrap{margin-top:36px; max-width:920px;}
-  .scenario-buttons{display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;}
-  .sc-btn{
-    background:var(--panel); border:1px solid var(--line); color:var(--text); padding:8px 14px;
-    border-radius:6px; font-family:var(--mono); font-size:12px; cursor:pointer; transition:all .2s;
-  }
-  .sc-btn:hover, .sc-btn.active{border-color:var(--accent); background:rgba(76,126,255,0.15); color:#fff;}
-
-  .lanes-stage{
-    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:24px;
-    position:relative; overflow:hidden;
-  }
-  .triage-monitor{
-    display:flex; justify-content:space-between; align-items:center; padding-bottom:18px;
-    border-bottom:1px solid var(--line); font-family:var(--mono); font-size:13px;
-  }
-  .lane-boxes{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:20px;}
+  .lane-boxes{display:grid; grid-template-columns:repeat(3,1fr); gap:18px;}
   .lane-box{
-    border-radius:8px; padding:18px; border:1px solid var(--line); background:var(--panel-2);
-    text-align:center; transition:all .3s ease;
+    border-radius:10px; padding:24px 20px; border:1px solid var(--line); background:var(--panel);
+    text-align:center; transition:transform .2s, border-color .2s;
   }
-  .lane-box .pct{font-family:var(--mono); font-size:26px; font-weight:600;}
-  .lane-box .name{font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:0.08em; margin-top:6px; color:var(--text-dim);}
-  .lane-box .sub{font-size:12px; color:var(--text-dim); margin-top:8px; line-height:1.5;}
+  .lane-box:hover{transform:translateY(-3px);}
+  .lane-box .pct{font-family:var(--mono); font-size:32px; font-weight:700;}
+  .lane-box .name{font-family:var(--mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; margin-top:8px;}
+  .lane-box .sub{font-size:13px; color:var(--text-dim); margin-top:10px; line-height:1.5;}
+  .lane-box .sub b{color:var(--text);}
   
-  .lane-box.active-approve{border-color:var(--green); background:rgba(53,211,138,0.12); box-shadow:0 0 16px rgba(53,211,138,0.2);}
-  .lane-box.active-approve .pct{color:var(--green);}
-  .lane-box.active-review{border-color:var(--amber); background:rgba(232,178,61,0.12); box-shadow:0 0 16px rgba(232,178,61,0.2);}
-  .lane-box.active-review .pct{color:var(--amber);}
-  .lane-box.active-block{border-color:var(--red); background:rgba(239,83,80,0.12); box-shadow:0 0 16px rgba(239,83,80,0.2);}
-  .lane-box.active-block .pct{color:var(--red);}
+  .lane-box.approve{border-color:rgba(53,211,138,0.4); background:linear-gradient(180deg, rgba(53,211,138,0.06), var(--panel));}
+  .lane-box.approve .pct, .lane-box.approve .name{color:var(--green);}
+  
+  .lane-box.review{border-color:rgba(232,178,61,0.4); background:linear-gradient(180deg, rgba(232,178,61,0.06), var(--panel));}
+  .lane-box.review .pct, .lane-box.review .name{color:var(--amber);}
+  
+  .lane-box.block{border-color:rgba(239,83,80,0.4); background:linear-gradient(180deg, rgba(239,83,80,0.06), var(--panel));}
+  .lane-box.block .pct, .lane-box.block .name{color:var(--red);}
 
   /* ---- what didn't work registry ---- */
   .registry{max-width:920px; margin-top:32px; display:flex; flex-direction:column;}
@@ -420,38 +409,24 @@
 <section id="gateway">
   <div class="eyebrow"><span class="num">05</span> Shipped Decision Gateway</div>
   <h1>Three operational lanes. One abstains.</h1>
-  <p class="lede">Standard models force a blunt binary decline. AI Risk Manager calibrates two operational cutoffs ($\tau_{\text{low}}=0.145, \tau_{\text{high}}=0.740$), enabling the model to abstain on ambiguous transactions.</p>
+  <p class="lede">Standard models force a blunt binary decline. AI Risk Manager mathematically calibrates two operational cutoffs ($\tau_{\text{low}}=0.145, \tau_{\text{high}}=0.740$), enabling the model to abstain on ambiguous transactions.</p>
 
   <div class="gateway-wrap">
-    <div class="scenario-buttons">
-      <button class="sc-btn active" onclick="simulateScenario('approve')">🟢 Scenario 1: Low-Risk Shopper (Risk: 0.0093)</button>
-      <button class="sc-btn" onclick="simulateScenario('review')">🟡 Scenario 2: Gray-Zone Anomaly (Risk: 0.2950)</button>
-      <button class="sc-btn" onclick="simulateScenario('block')">🔴 Scenario 3: Card-Testing Burst (Risk: 0.8708)</button>
-    </div>
-
-    <div class="lanes-stage">
-      <div class="triage-monitor">
-        <div>ACTIVE TRANSACTION: <span id="txn-id" style="color:var(--accent); font-weight:600;">#3459433</span></div>
-        <div>CALIBRATED RISK SCORE: <span id="txn-score" style="color:var(--green); font-weight:600;">0.0093</span></div>
-        <div>ROUTING ACTION: <span id="txn-action" style="color:var(--green); font-weight:600;">🟢 AUTO-APPROVE</span></div>
+    <div class="lane-boxes">
+      <div class="lane-box approve">
+        <div class="pct">96.22%</div>
+        <div class="name">🟢 Auto-Approve Lane</div>
+        <div class="sub"><b>113,649 transactions</b> (Score &lt; 0.145)<br>Zero customer friction, instant checkout authorization.</div>
       </div>
-
-      <div class="lane-boxes">
-        <div class="lane-box active-approve" id="box-approve">
-          <div class="pct" style="color:var(--green);">96.22%</div>
-          <div class="name">🟢 Auto-Approve</div>
-          <div class="sub">Risk &lt; 0.145 — 113,649 shoppers approved with zero checkout friction.</div>
-        </div>
-        <div class="lane-box" id="box-review">
-          <div class="pct">2.89%</div>
-          <div class="name">🟡 Manual Review Queue</div>
-          <div class="sub">0.145 ≤ Risk &lt; 0.740 — Model abstains; 1,127 frauds flagged for analyst investigation.</div>
-        </div>
-        <div class="lane-box" id="box-block">
-          <div class="pct">0.88%</div>
-          <div class="name">🔴 Auto-Block</div>
-          <div class="sub">Risk ≥ 0.740 — 943 frauds blocked automatically with 90.24% verified precision floor.</div>
-        </div>
+      <div class="lane-box review">
+        <div class="pct">2.89%</div>
+        <div class="name">🟡 Manual Review Queue</div>
+        <div class="sub"><b>3,414 transactions</b> ([0.145, 0.740))<br>Model abstains; routed to human investigator queue with SHAP audit cards.</div>
+      </div>
+      <div class="lane-box block">
+        <div class="pct">0.88%</div>
+        <div class="name">🔴 Auto-Block Lane</div>
+        <div class="sub"><b>1,045 transactions</b> (Score ≥ 0.740)<br>Automated hard containment with 90.24% verified precision floor.</div>
       </div>
     </div>
   </div>
@@ -520,50 +495,6 @@
     });
   }, {threshold:0.5});
   sections.forEach(s=>io.observe(s));
-
-  // Interactive 3-lane gateway scenario simulation
-  function simulateScenario(type){
-    const buttons = document.querySelectorAll('.sc-btn');
-    buttons.forEach(b => b.classList.remove('active'));
-    
-    const boxApprove = document.getElementById('box-approve');
-    const boxReview = document.getElementById('box-review');
-    const boxBlock = document.getElementById('box-block');
-    
-    boxApprove.className = 'lane-box';
-    boxReview.className = 'lane-box';
-    boxBlock.className = 'lane-box';
-    
-    const txnId = document.getElementById('txn-id');
-    const txnScore = document.getElementById('txn-score');
-    const txnAction = document.getElementById('txn-action');
-
-    if(type === 'approve'){
-      event.target.classList.add('active');
-      boxApprove.classList.add('active-approve');
-      txnId.innerText = '#3459433';
-      txnScore.innerText = '0.0093';
-      txnScore.style.color = 'var(--green)';
-      txnAction.innerText = '🟢 AUTO-APPROVE (Zero Friction)';
-      txnAction.style.color = 'var(--green)';
-    } else if(type === 'review'){
-      event.target.classList.add('active');
-      boxReview.classList.add('active-review');
-      txnId.innerText = '#3459635';
-      txnScore.innerText = '0.2950';
-      txnScore.style.color = 'var(--amber)';
-      txnAction.innerText = '🟡 MANUAL REVIEW (Model Abstains)';
-      txnAction.style.color = 'var(--amber)';
-    } else if(type === 'block'){
-      event.target.classList.add('active');
-      boxBlock.classList.add('active-block');
-      txnId.innerText = '#3460303';
-      txnScore.innerText = '0.8708';
-      txnScore.style.color = 'var(--red)';
-      txnAction.innerText = '🔴 AUTO-BLOCK (≥90% Precision Floor)';
-      txnAction.style.color = 'var(--red)';
-    }
-  }
 </script>
 
 </body>
