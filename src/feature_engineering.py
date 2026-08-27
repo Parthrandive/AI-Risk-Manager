@@ -468,3 +468,108 @@ def run_layer2_pipeline(
 
     logger.info("=== Layer 2 Complete: Output saved to %s ===", output_dir)
     return metadata
+
+
+def audit_feature_temporal_consistency(
+    train_features_df: pd.DataFrame,
+    features_to_test: Optional[List[str]] = None,
+    time_col: str = "TransactionDT",
+    target_col: str = "isFraud",
+    early_quantile: float = 0.25,
+    late_quantile: float = 0.75,
+    tree_max_depth: int = 3
+) -> Dict[str, Any]:
+    """
+    Evaluates temporal consistency and stationarity of feature-target relationships.
+    
+    Methodology:
+    1. Chronologically partitions historical data into Month 1 (Early Train, <= 25th time percentile)
+       and Month 5 (Late Train, >= 75th time percentile).
+    2. Fits a standalone single-feature decision stump/tree on Month 1 data.
+    3. Evaluates out-of-sample generalization (ROC-AUC) on Month 5 data.
+    4. Detects non-stationary features that decay or invert over time.
+    """
+    from sklearn.tree import DecisionTreeClassifier
+    from sklearn.metrics import roc_auc_score
+
+    logger.info("=== Running Feature Temporal Consistency Audit (Month 1 vs Month 5) ===")
+
+    t_min = train_features_df[time_col].min()
+    t_max = train_features_df[time_col].max()
+    t_span = t_max - t_min
+
+    early_cutoff = t_min + early_quantile * t_span
+    late_cutoff = t_max - (1.0 - late_quantile) * t_span
+
+    early_df = train_features_df[train_features_df[time_col] <= early_cutoff]
+    late_df = train_features_df[train_features_df[time_col] >= late_cutoff]
+
+    logger.info(
+        f"Early window: {len(early_df):,} rows (fraud rate: {early_df[target_col].mean():.4f}) | "
+        f"Late window: {len(late_df):,} rows (fraud rate: {late_df[target_col].mean():.4f})"
+    )
+
+    if features_to_test is None:
+        exclude_cols = {"TransactionID", "TransactionDT", "isFraud", "_card_proxy", "_device_proxy"}
+        features_to_test = [
+            c for c in train_features_df.columns
+            if c not in exclude_cols and pd.api.types.is_numeric_dtype(train_features_df[c].dtype)
+        ]
+
+    feature_results = []
+    stable_count = 0
+    decaying_count = 0
+    inverted_count = 0
+
+    for feat in features_to_test:
+        if feat not in train_features_df.columns:
+            continue
+
+        X_early = early_df[[feat]].fillna(-999)
+        y_early = early_df[target_col]
+        X_late = late_df[[feat]].fillna(-999)
+        y_late = late_df[target_col]
+
+        # Check if feature has variation in early window
+        if X_early[feat].nunique() <= 1 or y_early.nunique() <= 1:
+            continue
+
+        tree = DecisionTreeClassifier(max_depth=tree_max_depth, random_state=42)
+        tree.fit(X_early, y_early)
+
+        pred_early = tree.predict_proba(X_early)[:, 1]
+        pred_late = tree.predict_proba(X_late)[:, 1]
+
+        auc_early = float(roc_auc_score(y_early, pred_early))
+        auc_late = float(roc_auc_score(y_late, pred_late))
+        delta = auc_late - auc_early
+
+        if auc_early >= 0.52 and auc_late < 0.48:
+            status = "INVERTED (TOXIC)"
+            inverted_count += 1
+        elif delta < -0.05:
+            status = "DECAYING"
+            decaying_count += 1
+        else:
+            status = "STABLE (PASS)"
+            stable_count += 1
+
+        feature_results.append({
+            "feature_name": feat,
+            "train_auc_early": round(auc_early, 4),
+            "oos_test_auc_late": round(auc_late, 4),
+            "temporal_shift_delta": round(delta, 4),
+            "stability_status": status
+        })
+
+    report = {
+        "early_window_rows": len(early_df),
+        "late_window_rows": len(late_df),
+        "total_features_evaluated": len(feature_results),
+        "stable_features_count": stable_count,
+        "decaying_features_count": decaying_count,
+        "inverted_features_count": inverted_count,
+        "feature_metrics": feature_results
+    }
+    return report
+

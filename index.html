@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Risk Manager — Interactive System Visualizer (Track 02)</title>
+<style>
+  :root{
+    --bg: #0a0c0f;
+    --panel: #12151a;
+    --panel-2: #171b21;
+    --line: #262c35;
+    --text: #e7eaee;
+    --text-dim: #8b93a1;
+    --accent: #4c7eff;
+    --green: #35d38a;
+    --amber: #e8b23d;
+    --red: #ef5350;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    overflow-x:hidden;
+  }
+  ::selection{background:var(--accent); color:#fff;}
+
+  /* top status bar */
+  .statusbar{
+    position:fixed; top:0; left:0; right:0; height:42px; z-index:100;
+    background:rgba(10,12,15,0.92); backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 24px; font-family:var(--mono); font-size:12px; color:var(--text-dim);
+    letter-spacing:0.02em;
+  }
+  .statusbar .brand{display:flex; align-items:center; font-weight:600; color:var(--text);}
+  .statusbar .dot{width:7px; height:7px; border-radius:50%; background:var(--green); display:inline-block; margin-right:10px; box-shadow:0 0 8px var(--green);}
+  .statusbar .badges{display:flex; gap:16px;}
+  .statusbar .badges span{display:inline-flex; align-items:center; gap:6px;}
+  .statusbar .badges b{color:var(--text);}
+
+  /* side nav */
+  .nav{
+    position:fixed; right:24px; top:50%; transform:translateY(-50%); z-index:100;
+    display:flex; flex-direction:column; gap:14px;
+  }
+  .nav a{
+    width:9px; height:9px; border-radius:50%; background:var(--line);
+    border:1px solid var(--line); display:block; position:relative;
+    transition:all .25s ease;
+  }
+  .nav a.active{background:var(--accent); border-color:var(--accent); box-shadow:0 0 10px var(--accent); transform:scale(1.25);}
+  .nav a::after{
+    content:attr(data-label); position:absolute; right:22px; top:50%; transform:translateY(-50%);
+    font-family:var(--mono); font-size:11px; color:var(--text-dim); white-space:nowrap;
+    opacity:0; transition:opacity .2s; pointer-events:none; background:var(--panel); padding:4px 8px; border-radius:4px; border:1px solid var(--line);
+  }
+  .nav a:hover::after{opacity:1;}
+
+  section{
+    min-height:100vh; display:flex; flex-direction:column; justify-content:center;
+    padding:110px 10vw 70px; position:relative; border-bottom:1px solid var(--line);
+  }
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; color:var(--accent); letter-spacing:0.12em;
+    text-transform:uppercase; margin-bottom:18px; display:flex; align-items:center; gap:10px;
+  }
+  .eyebrow .num{color:var(--text-dim);}
+  h1{
+    font-family:var(--mono); font-weight:600; font-size:clamp(28px,4vw,50px);
+    line-height:1.15; letter-spacing:-0.01em; max-width:940px;
+  }
+  h1 .accent{color:var(--accent);}
+  h1 .green{color:var(--green);}
+  h1 .amber{color:var(--amber);}
+  h1 .red{color:var(--red);}
+  p.lede{
+    font-size:17px; color:var(--text-dim); max-width:680px; margin-top:20px; line-height:1.6;
+  }
+
+  /* ---- hero ---- */
+  .trilemma{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:16px; max-width:860px; margin-top:44px;
+  }
+  .trilemma div{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px;
+    transition:transform .2s, border-color .2s;
+  }
+  .trilemma div:hover{border-color:var(--accent); transform:translateY(-2px);}
+  .trilemma .k{font-family:var(--mono); font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.08em;}
+  .trilemma .v{font-size:14px; margin-top:8px; line-height:1.5; color:var(--text);}
+
+  /* ---- architecture minimal pipeline flow ---- */
+  .pipeline{margin-top:36px; display:flex; flex-direction:column; gap:8px; max-width:820px;}
+  .stage{
+    display:grid; grid-template-columns:48px 1fr auto; gap:20px; align-items:center;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px 22px; position:relative;
+    transition:border-color .2s, transform .2s;
+  }
+  .stage:hover{border-color:var(--accent); transform:translateX(3px);}
+  .stage .idx{
+    font-family:var(--mono); color:var(--accent); font-size:13px; font-weight:700;
+    background:rgba(76,126,255,0.1); padding:6px 10px; border-radius:6px; border:1px solid rgba(76,126,255,0.25);
+    text-align:center;
+  }
+  .stage .name{font-weight:600; font-size:15px; display:flex; align-items:center; gap:8px;}
+  .stage .desc{color:var(--text-dim); font-size:13px; margin-top:4px; line-height:1.4;}
+  .stage .meta{font-family:var(--mono); font-size:11.5px; color:var(--text-dim); text-align:right;}
+  .stage .meta b{color:var(--green);}
+  .stage.gateway{border-color:rgba(76,126,255,0.4); background:linear-gradient(90deg, rgba(76,126,255,0.06), var(--panel));}
+
+  /* ---- diagnostic discipline ---- */
+  .catches{display:flex; flex-direction:column; gap:0; max-width:860px; margin-top:36px;}
+  .catch{
+    display:grid; grid-template-columns:190px 1fr 1fr; gap:20px; padding:18px 0;
+    border-bottom:1px solid var(--line); align-items:start;
+  }
+  .catch .tag{font-family:var(--mono); font-size:11px; color:var(--red); text-transform:uppercase; letter-spacing:0.06em;}
+  .catch .bad, .catch .good{font-size:13.5px; line-height:1.5;}
+  .catch .lbl{display:block; font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;}
+  .catch .bad .lbl{color:var(--red);}
+  .catch .good .lbl{color:var(--green);}
+
+  .pivot-banner{
+    margin-top:32px; max-width:860px; background:var(--panel-2); border:1px dashed var(--amber);
+    border-radius:10px; padding:18px 22px; font-size:13.5px; color:var(--text-dim); line-height:1.6;
+  }
+  .pivot-banner b{color:var(--amber); font-family:var(--mono);}
+
+  /* ---- results table & economics ---- */
+  table{border-collapse:collapse; width:100%; max-width:920px; margin-top:32px; font-size:13.5px;}
+  th{
+    text-align:left; font-family:var(--mono); font-size:11px; text-transform:uppercase;
+    letter-spacing:0.06em; color:var(--text-dim); padding:10px 14px; border-bottom:1px solid var(--line);
+  }
+  td{padding:12px 14px; border-bottom:1px solid var(--line); font-family:var(--mono);}
+  tr.champion td{color:var(--green); font-weight:600;}
+  tr.champion{background:rgba(53,211,138,0.05);}
+  td.label{font-family:var(--sans); font-weight:500; color:var(--text);}
+  tr.champion td.label{color:var(--green);}
+
+  .stat-row{display:flex; gap:24px; margin-top:32px; flex-wrap:wrap;}
+  .stat{min-width:140px; background:var(--panel); border:1px solid var(--line); padding:14px 18px; border-radius:8px;}
+  .stat .n{font-family:var(--mono); font-size:26px; color:var(--accent); font-weight:600;}
+  .stat .l{font-size:11.5px; color:var(--text-dim); margin-top:4px;}
+
+  /* ---- gateway static 3-lane policy (macro architecture) ---- */
+  .gateway-wrap{margin-top:36px; max-width:920px;}
+  .lane-boxes{display:grid; grid-template-columns:repeat(3,1fr); gap:18px;}
+  .lane-box{
+    border-radius:10px; padding:24px 20px; border:1px solid var(--line); background:var(--panel);
+    text-align:center; transition:transform .2s, border-color .2s;
+  }
+  .lane-box:hover{transform:translateY(-3px);}
+  .lane-box .pct{font-family:var(--mono); font-size:32px; font-weight:700;}
+  .lane-box .name{font-family:var(--mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; margin-top:8px;}
+  .lane-box .sub{font-size:13px; color:var(--text-dim); margin-top:10px; line-height:1.5;}
+  .lane-box .sub b{color:var(--text);}
+  
+  .lane-box.approve{border-color:rgba(53,211,138,0.4); background:linear-gradient(180deg, rgba(53,211,138,0.06), var(--panel));}
+  .lane-box.approve .pct, .lane-box.approve .name{color:var(--green);}
+  
+  .lane-box.review{border-color:rgba(232,178,61,0.4); background:linear-gradient(180deg, rgba(232,178,61,0.06), var(--panel));}
+  .lane-box.review .pct, .lane-box.review .name{color:var(--amber);}
+  
+  .lane-box.block{border-color:rgba(239,83,80,0.4); background:linear-gradient(180deg, rgba(239,83,80,0.06), var(--panel));}
+  .lane-box.block .pct, .lane-box.block .name{color:var(--red);}
+
+  /* ---- what didn't work registry ---- */
+  .registry{max-width:920px; margin-top:32px; display:flex; flex-direction:column;}
+  .reg-row{display:grid; grid-template-columns:34px 1.1fr 1.2fr; gap:20px; padding:15px 0; border-bottom:1px solid var(--line);}
+  .reg-row .n{font-family:var(--mono); color:var(--text-dim); font-size:13px; padding-top:2px;}
+  .reg-row .attempt{font-size:13.5px; color:var(--text); font-weight:500;}
+  .reg-row .outcome{font-size:13px; color:var(--text-dim); line-height:1.5;}
+  .reg-row .outcome b{color:var(--green); font-family:var(--mono); font-weight:600;}
+
+  /* ---- switch to live demo ---- */
+  #switch{
+    justify-content:center; align-items:center; text-align:center; background:radial-gradient(circle at center, #101624, var(--bg) 70%);
+  }
+  .switch-inner{max-width:680px;}
+  .pulse{
+    width:68px; height:68px; border-radius:50%; border:2px solid var(--accent); margin:0 auto 28px;
+    display:flex; align-items:center; justify-content:center; position:relative;
+  }
+  .pulse::before{
+    content:""; position:absolute; inset:-2px; border-radius:50%; border:2px solid var(--accent);
+    animation:pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse{
+    0%{transform:scale(1); opacity:0.7;}
+    100%{transform:scale(1.7); opacity:0;}
+  }
+  .pulse svg{width:26px; height:26px;}
+  .url-chip{
+    display:inline-flex; align-items:center; gap:8px; margin-top:26px; font-family:var(--mono); font-size:14px;
+    background:var(--panel); border:1px solid var(--accent); border-radius:8px; padding:10px 20px; color:var(--accent);
+    text-decoration:none; transition:all .2s;
+  }
+  .url-chip:hover{background:var(--accent); color:#fff; box-shadow:0 0 16px rgba(76,126,255,0.4);}
+
+  @media (max-width:768px){
+    .catch{grid-template-columns:1fr;}
+    .trilemma{grid-template-columns:1fr;}
+    .lane-boxes{grid-template-columns:1fr;}
+    .reg-row{grid-template-columns:30px 1fr;}
+    .reg-row .outcome{grid-column:2;}
+    .nav{display:none;}
+    section{padding:90px 6vw 50px;}
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP CHROME STATUS BAR -->
+<div class="statusbar">
+  <div class="brand"><span class="dot"></span>AI RISK MANAGER — LIVE VERIFIED</div>
+  <div class="badges">
+    <span>TRACK <b>02 (AI RISK MANAGER)</b></span>
+    <span>DATASET <b>IEEE-CIS · 590,540 TXNS</b></span>
+    <span>INFERENCE <b>0.30 ms P50 (3,082 TXN/S)</b></span>
+  </div>
+</div>
+
+<!-- SIDE PROGRESS NAV -->
+<nav class="nav">
+  <a href="#hero" data-label="Problem" class="active"></a>
+  <a href="#architecture" data-label="Architecture"></a>
+  <a href="#diagnostic" data-label="Leakage & Discipline"></a>
+  <a href="#results" data-label="Verified Results"></a>
+  <a href="#gateway" data-label="3-Lane Gateway"></a>
+  <a href="#registry" data-label="What Didn't Work"></a>
+  <a href="#switch" data-label="Live Demo"></a>
+</nav>
+
+<!-- 01 — HERO / THE PROBLEM -->
+<section id="hero">
+  <div class="eyebrow"><span class="num">01</span> The Core Payments Trilemma</div>
+  <h1>Every payment gets <span class="accent">100 milliseconds</span> to be trusted, reviewed, or blocked.</h1>
+  <p class="lede">Block too hard and honest shoppers churn. Ignore risk and chargebacks destroy gross margin. Flag everything and the fraud operations queue drowns. AI Risk Manager is a production triage gateway engineered to sit honestly inside this trade-off.</p>
+  <div class="trilemma">
+    <div>
+      <div class="k">1. Passive Blind Approval</div>
+      <div class="v">Fraud losses and \$15 chargeback penalty fees compound silently against merchant profits.</div>
+    </div>
+    <div>
+      <div class="k">2. Aggressive Hard Decline</div>
+      <div class="v">False declines cause immediate shopper insult, cart abandonment, and permanent customer churn.</div>
+    </div>
+    <div>
+      <div class="k">3. Blind Review Queue Spill</div>
+      <div class="v">Analyst queues overflow; review SLA lapses, and high-ticket fraud slips through unnoticed.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 02 — ARCHITECTURE -->
+<section id="architecture">
+  <div class="eyebrow"><span class="num">02</span> Pipeline Architecture</div>
+  <h1>Five production layers. One decision gateway. Zero lookahead leakage.</h1>
+  <p class="lede">A continuous streaming pipeline engineered for real-time payment risk scoring.</p>
+
+  <div class="pipeline">
+    <div class="stage">
+      <div class="idx">01</div>
+      <div>
+        <div class="name">Chronological Partitioning & Leakage Invariants</div>
+        <div class="desc">Strict 80/20 time-quantile split with 10% validation buffer — zero random shuffling across time.</div>
+      </div>
+      <div class="meta">TRAIN: <b>413.4k</b><br>TEST: <b>118.1k</b></div>
+    </div>
+
+    <div class="stage">
+      <div class="idx">02</div>
+      <div>
+        <div class="name">Continuous Streaming State Feature Engineering</div>
+        <div class="desc">Rolling 10m/1h/24h velocity windows, t−1 expanding card mean ratios, and cross-boundary state carryover.</div>
+      </div>
+      <div class="meta">FEATS: <b>429</b><br>LEAKAGE: <b>0.00%</b></div>
+    </div>
+
+    <div class="stage">
+      <div class="idx">03</div>
+      <div>
+        <div class="name">Sub-Millisecond Gradient-Boosted Decision Engine</div>
+        <div class="desc">Native C++ XGBoost booster inference (P50: 0.30ms, 3,082 txns/sec/core) vs. LightGBM & Logistic Regression.</div>
+      </div>
+      <div class="meta">PR-AUC: <b>0.5111</b><br>P50: <b>0.30 ms</b></div>
+    </div>
+
+    <div class="stage">
+      <div class="idx">04</div>
+      <div>
+        <div class="name">Probability Calibration & Unit Economics Optimization</div>
+        <div class="desc">Reliability diagram (Brier score 0.0225) + cost-utility matrix yielding +$352.8k net financial value.</div>
+      </div>
+      <div class="meta">BRIER: <b>0.0225</b><br>VALUE: <b>+$352.8k</b></div>
+    </div>
+
+    <div class="stage gateway">
+      <div class="idx">05</div>
+      <div>
+        <div class="name">SHAP Explainability & 3-Lane Triage Gateway ⚡</div>
+        <div class="desc">Exact local TreeSHAP factor attribution + human-in-the-loop abstention queue with live drift alerts.</div>
+      </div>
+      <div class="meta">AUTO-BLOCK: <b>90.2%</b><br>REVIEW: <b>2.89%</b></div>
+    </div>
+  </div>
+</section>
+
+<!-- 03 — DIAGNOSTIC DISCIPLINE -->
+<section id="diagnostic">
+  <div class="eyebrow"><span class="num">03</span> Diagnostic Discipline</div>
+  <h1>The systemic leaks we audited and fixed.</h1>
+  <div class="catches">
+    <div class="catch">
+      <div class="tag">Split Leakage</div>
+      <div class="bad"><span class="lbl">Naive Kaggle Benchmark</span>Random k-fold shuffle allows future cardholder patterns to leak into the training partition.</div>
+      <div class="good"><span class="lbl">Production Fix</span>Strict chronological quantile split verified via zero-timestamp overlap invariant.</div>
+    </div>
+    <div class="catch">
+      <div class="tag">Intra-Split Target Leakage</div>
+      <div class="bad"><span class="lbl">Naive Kaggle Benchmark</span>Global per-card mean encoding allows an early transaction to "see" future transaction amounts.</div>
+      <div class="good"><span class="lbl">Production Fix</span>Expanding cumulative historical mean — strictly conditioned on prior activity up to <i>t−1</i>.</div>
+    </div>
+    <div class="catch">
+      <div class="tag">Cold-Start Boundary Flaw</div>
+      <div class="bad"><span class="lbl">Naive Kaggle Benchmark</span>Velocity state resets to zero at the test split boundary, blinding the model to ongoing attacks.</div>
+      <div class="good"><span class="lbl">Production Fix</span><code>StreamingRiskState</code> carries rolling velocity & recency continuously across the split barrier.</div>
+    </div>
+    <div class="catch">
+      <div class="tag">Temporal Decay Inversion</div>
+      <div class="bad"><span class="lbl">Naive Kaggle Benchmark</span>Blindly trusting opaque vendor features that exhibit transient correlation in Month 1.</div>
+      <div class="good"><span class="lbl">Production Fix</span>Month 1 $\to$ Month 5 audit identified 64 decaying/inverting raw vendor features; 100% of domain features held stable.</div>
+    </div>
+  </div>
+  <div class="pivot-banner">
+    <b>Empirical Reality Check —</b> On synthetic benchmark data, linear models falsely outperformed tree ensembles. Once deployed on the authentic 590,540-transaction IEEE-CIS dataset, XGBoost dominated by <b>+0.33 PR-AUC</b>, proving the necessity of real payment distributions.
+  </div>
+</section>
+
+<!-- 04 — RESULTS -->
+<section id="results">
+  <div class="eyebrow"><span class="num">04</span> Empirically Verified Test Benchmark</div>
+  <h1>118,108 held-out transactions. 4,064 real fraud attacks.</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Model Architecture</th>
+        <th>PR-AUC (5-Seed)</th>
+        <th>ROC-AUC</th>
+        <th>Precision (at 0.5)</th>
+        <th>Recall (at 0.5)</th>
+        <th>Brier Calibration</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="label">Baseline (Logistic Regression)</td>
+        <td>0.1834</td>
+        <td>0.8311</td>
+        <td>12.60%</td>
+        <td>69.46%</td>
+        <td>0.0682</td>
+      </tr>
+      <tr>
+        <td class="label">LightGBM GBDT</td>
+        <td>0.4784</td>
+        <td>0.8907</td>
+        <td>80.18%</td>
+        <td>30.46%</td>
+        <td>0.0238</td>
+      </tr>
+      <tr class="champion">
+        <td class="label">⭐ XGBoost GBDT (Primary Champion)</td>
+        <td>0.5111 ± 0.0031</td>
+        <td>0.8967 ± 0.0012</td>
+        <td>81.50%</td>
+        <td>31.32%</td>
+        <td>0.0225</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="stat-row">
+    <div class="stat">
+      <div class="n">+0.3277</div>
+      <div class="l">PR-AUC lift over linear baseline</div>
+    </div>
+    <div class="stat">
+      <div class="n">0.30 ms</div>
+      <div class="l">P50 inference latency (10k offline runs)</div>
+    </div>
+    <div class="stat">
+      <div class="n">+$352,859</div>
+      <div class="l">Net financial value generated on test set</div>
+    </div>
+    <div class="stat">
+      <div class="n">20.7x</div>
+      <div class="l">Financial ROI over analyst labor costs</div>
+    </div>
+  </div>
+</section>
+
+<!-- 05 — DECISION GATEWAY -->
+<section id="gateway">
+  <div class="eyebrow"><span class="num">05</span> Shipped Decision Gateway</div>
+  <h1>Three operational lanes. One abstains.</h1>
+  <p class="lede">Standard models force a blunt binary decline. AI Risk Manager mathematically calibrates two operational cutoffs ($\tau_{\text{low}}=0.145, \tau_{\text{high}}=0.740$), enabling the model to abstain on ambiguous transactions.</p>
+
+  <div class="gateway-wrap">
+    <div class="lane-boxes">
+      <div class="lane-box approve">
+        <div class="pct">96.22%</div>
+        <div class="name">🟢 Auto-Approve Lane</div>
+        <div class="sub"><b>113,649 transactions</b> (Score &lt; 0.145)<br>Zero customer friction, instant checkout authorization.</div>
+      </div>
+      <div class="lane-box review">
+        <div class="pct">2.89%</div>
+        <div class="name">🟡 Manual Review Queue</div>
+        <div class="sub"><b>3,414 transactions</b> ([0.145, 0.740))<br>Model abstains; routed to human investigator queue with SHAP audit cards.</div>
+      </div>
+      <div class="lane-box block">
+        <div class="pct">0.88%</div>
+        <div class="name">🔴 Auto-Block Lane</div>
+        <div class="sub"><b>1,045 transactions</b> (Score ≥ 0.740)<br>Automated hard containment with 90.24% verified precision floor.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 06 — WHAT DIDN'T WORK REGISTRY -->
+<section id="registry">
+  <div class="eyebrow"><span class="num">06</span> Negative Findings & Architecture Ablations</div>
+  <h1>The "What Didn't Work" registry that proves rigor.</h1>
+  <div class="registry">
+    <div class="reg-row">
+      <div class="n">01</div>
+      <div class="attempt">Trimming to 20 "interpretable-only" features and dropping vendor fields</div>
+      <div class="outcome">PR-AUC collapsed to <b>0.225</b> (-0.286 drop). Restored full 429 features and added an opaque-signal disclosure layer instead.</div>
+    </div>
+    <div class="reg-row">
+      <div class="n">02</div>
+      <div class="attempt">Relational Graph Embeddings (GraphSAGE 16-dim representation)</div>
+      <div class="outcome">PR-AUC degraded from <b>0.5111</b> to <b>0.5047</b> (Information Subsumption). Streaming velocity features already captured graph topology.</div>
+    </div>
+    <div class="reg-row">
+      <div class="n">03</div>
+      <div class="attempt">Hardcoded scale_pos_weight = 28.87 class balancing</div>
+      <div class="outcome">Severely distorted posterior probability calibration. Replaced with empirical cost-sensitive threshold grid search.</div>
+    </div>
+    <div class="reg-row">
+      <div class="n">04</div>
+      <div class="attempt">Static default classification threshold of 0.500</div>
+      <div class="outcome">Arbitrary and un-costed. Replaced with asymmetric 3-tier gateway bounded by 3% analyst capacity and 90% precision.</div>
+    </div>
+    <div class="reg-row">
+      <div class="n">05</div>
+      <div class="attempt">Temporal Consistency Audit on all 429 features (Month 1 vs Month 5)</div>
+      <div class="outcome">Identified <b>64 raw vendor V-features</b> that decayed or inverted over time; 100% of domain velocity features passed stationarity checks.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 07 — SWITCH TO LIVE DEMO -->
+<section id="switch">
+  <div class="switch-inner">
+    <div class="pulse">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#4c7eff" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+    </div>
+    <div class="eyebrow" style="justify-content:center;"><span class="num">07</span> Interactive Verification</div>
+    <h1>Everything above is the architecture. This is the live proof.</h1>
+    <p class="lede" style="margin-left:auto; margin-right:auto;">Experience the real-time scoring engine, local SHAP attribution cards, dynamic threshold sliders, and human-in-the-loop analyst override console.</p>
+    <a href="http://localhost:8501" target="_blank" class="url-chip">
+      <span>⚡ Open Live Streamlit App (localhost:8501)</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+    </a>
+  </div>
+</section>
+
+<script>
+  // Active nav dot on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.nav a');
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        navLinks.forEach(a=>a.classList.remove('active'));
+        const link = document.querySelector('.nav a[href="#'+e.target.id+'"]');
+        if(link) link.classList.add('active');
+      }
+    });
+  }, {threshold:0.5});
+  sections.forEach(s=>io.observe(s));
+</script>
+
+</body>
+</html>

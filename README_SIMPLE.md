@@ -275,6 +275,17 @@ To measure how fast an AI model gets "outdated," we split our 6-month dataset in
 
 ---
 
+### Deep Dive 4: The Time Consistency Test (Do Fraud Clues Hold Up in the Future?)
+
+* **The Problem**: A dangerous trap in AI fraud models is using clues that work today but invert or stop working tomorrow (finding temporary coincidences rather than true fraud signals).
+* **The Test**: We trained standalone mini-models on **Month 1** data and tested them on **Month 5** data to see if each clue stayed predictive over time.
+* **The Results**:
+  - **100% of our streaming clues passed with flying colors**: `card_txn_count_24h` (+0.012 AUC), `amt_to_expanding_card_mean_ratio` (+0.014 AUC), and `time_since_last_txn_card` (+0.014 AUC) all maintained or increased their predictive power over time.
+  - **64 raw vendor codes failed the test**: The audit caught 64 raw vendor variables (like `V156`, `V161`, `V163`) where predictive power collapsed or completely inverted (e.g. `V161` went from a positive signal in Month 1 to an inverted misleading signal in Month 5).
+* **The Takeaway**: This proves why our engineered streaming memory counters provide far more reliable real-world protection than blind reliance on raw vendor mystery codes.
+
+---
+
 ## 📋 A Look Inside a Live "Explainable Audit Card" (With Dynamic SHAP Forces)
 
 Whenever a transaction lands in the **Manual Review** or **Auto-Block** lane, the system outputs an auditable risk card with exact numerical model forces:
